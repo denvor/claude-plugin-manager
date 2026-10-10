@@ -55,3 +55,49 @@ class TestLoadPlugins(unittest.TestCase):
             rc = cpm.main(["status"], ctx=self.ctx)
         self.assertEqual(rc, cpm.EXIT_BROKEN)
         self.assertIn("损坏", err.getvalue())
+
+
+class TestPluginExpected(unittest.TestCase):
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.home = fixture.build_home(Path(self._td.name))
+        self.ctx = fixture.test_ctx(self.home)
+        self.mp = self.ctx.marketplaces / fixture.MARKET
+        self.addCleanup(self._td.cleanup)
+
+    def test_semver_wins_over_path_form(self):
+        exp, src = cpm.plugin_expected(self.mp,
+                                       {"name": "cc", "version": "2.0.0", "source": "./plugins/cc"})
+        self.assertEqual(exp, "2.0.0")
+        self.assertIn("semver", src)
+
+    def test_url_source_returns_pinned_sha(self):
+        entry = {"name": "bb", "source": {"source": "url",
+                                         "url": "https://github.com/x/bb.git",
+                                         "sha": "deadbeef00000000000000000000000000000000"}}
+        exp, src = cpm.plugin_expected(self.mp, entry)
+        self.assertEqual(exp, "deadbeef" + "0" * 32)
+        self.assertIn("url 钉", src)
+
+    def test_path_source_uses_last_commit_touching_plugin_dir(self):
+        exp, src = cpm.plugin_expected(self.mp, {"name": "aa", "source": "./plugins/aa"})
+        self.assertEqual(len(exp), 40)                      # r2 完整 sha
+        ledger = cpm.load_json(self.ctx.plugins_json)["plugins"][f"aa@{fixture.MARKET}"][0]
+        self.assertNotEqual(exp, ledger["gitCommitSha"])   # marketplace 已前进（r2 ≠ r1）
+        self.assertIn("path", src)
+
+    def test_missing_marketplace_entry(self):
+        entry, mp_dir = cpm.find_marketplace_entry(self.ctx, fixture.MARKET, "zzz")
+        self.assertIsNone(entry)
+        entry, mp_dir = cpm.find_marketplace_entry(self.ctx, "不存在的marketplace", "aa")
+        self.assertIsNone(entry)
+
+    def test_outdated_rules(self):
+        self.assertFalse(cpm.outdated("abc123", "abc123def"))      # sha 前缀
+        self.assertTrue(cpm.outdated("cafebabe0000", "deadbeef0000"))
+        self.assertFalse(cpm.outdated("1.0.0", "1.0.0"))
+        self.assertTrue(cpm.outdated("1.0.0", "2.0.0"))
+        self.assertFalse(cpm.outdated("v3.1.1", "3.1.1"))          # v 前缀剥离
+        self.assertFalse(cpm.outdated("3.1.1", "v3.1.1"))
+        self.assertIsNone(cpm.outdated("", "2.0.0"))               # 空值不可判
+        self.assertIsNone(cpm.outdated("2.0.0", None))

@@ -108,8 +108,41 @@ def load_mcps(ctx):
     return []          # 任务 8 实现
 
 
+def find_marketplace_entry(ctx, mp_name, plugin_name):
+    mp_dir = ctx.marketplaces / mp_name
+    mj = mp_dir / ".claude-plugin" / "marketplace.json"
+    if not mj.exists():
+        return None, mp_dir
+    for e in load_json(mj).get("plugins", []):
+        if e.get("name") == plugin_name:
+            return e, mp_dir
+    return None, mp_dir
+
+
+def plugin_expected(mp_dir, entry):
+    """返回 (应有版本, 来源描述)。优先级: semver 字段 > url 钉 sha > 路径 git log。"""
+    if entry.get("version"):
+        return entry["version"], f"marketplace semver（{entry['name']}）"
+    src = entry.get("source")
+    if isinstance(src, dict):
+        return src.get("sha"), f"url 钉 {src.get('url', '?')}"
+    if isinstance(src, str) and src.startswith("./"):
+        rc, out, _ = run_cmd(["git", "-C", str(mp_dir), "log", "-1", "--format=%H", "--", src[2:]])
+        if rc == 0 and out.strip():
+            return out.strip(), f"marketplace path {src}"
+        return None, f"marketplace path {src}（git log 失败）"
+    return None, "未知 source 形态"
+
+
 def outdated(current, expected):
-    return None  # 任务 3 实现
+    if not current or not expected:
+        return None
+    c, e = str(current).lower().strip(), str(expected).lower().strip()
+    c = c[1:] if c.startswith("v") else c
+    e = e[1:] if e.startswith("v") else e
+    if c == e or e.startswith(c) or c.startswith(e):   # sha 短/全长前缀等价
+        return False
+    return True
 
 
 def row_status(a, checked):
