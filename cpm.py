@@ -5,11 +5,15 @@
 网络(fetch_url)与子进程(run_cmd)收敛为模块级函数，测试注入替换后可全离线运行。
 """
 import argparse
+import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
+import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -300,6 +304,95 @@ def cmd_check_update(ctx, as_json=False):
     failed = (not refresh_ok) or any(a.expected is None for a in assets if a.managed)
     upd = any(outdated(a.current, a.expected) for a in assets if a.expected)
     return EXIT_PARTIAL if failed else (EXIT_OUTDATED if upd else EXIT_OK)
+
+
+def update_skill_zip(a, dry_run, out=print):
+    """release zip 换装（spec §4.2）：下载→SHA256SUMS 校验→保留 .gitignore 本地文件→原子交换。
+    校验不通过绝不触碰现装目录。"""
+    if not a.expected:
+        return False, "缺少目标版本（先 check-update）"
+    ref = a.expected
+    url = f"https://github.com/{a.source}/archive/refs/tags/{ref}.zip"
+    if dry_run:
+        out(f"  将执行: 下载 {url} → SHA256SUMS 校验 → 保留本地 .gitignore 文件 → 换装 {a.dir}")
+        return True, "dry-run"
+    blob = fetch_url(url)
+    if blob is None:
+        return False, f"下载失败: {url}"
+    old = Path(a.dir)
+    with tempfile.TemporaryDirectory() as td:
+        zpath = Path(td) / "d.zip"
+        zpath.write_bytes(blob)
+        ex = Path(td) / "ex"
+        ex.mkdir()
+        try:
+            with zipfile.ZipFile(zpath) as z:
+                z.extractall(ex)
+        except zipfile.BadZipFile:
+            return False, "zip 损坏"
+        inner = next(iter(ex.iterdir()))          # 顶层 <repo>-<tag>/ 目录
+        sums = inner / "SHA256SUMS.txt"
+        if sums.exists():
+            for line in sums.read_text(errors="ignore").splitlines():
+                parts = line.split(None, 1)
+                if len(parts) != 2:
+                    continue
+                want, rel = parts[0].strip(), parts[1].strip().lstrip("./")
+                f = inner / rel
+                if not f.is_file() or hashlib.sha256(f.read_bytes()).hexdigest() != want:
+                    return False, f"SHA256 校验失败: {rel}"
+        # 保留现装目录里 .gitignore 声明的本地生成文件（runtime.conf/.env 等）
+        keep = []
+        gi = old / ".gitignore"
+        if gi.exists():
+            keep = [ln.strip() for ln in gi.read_text(errors="ignore").splitlines()
+                    if ln.strip() and not ln.startswith("#") and not ln.startswith("!")]
+        for rel in keep:
+            src = old / rel
+            if src.is_file():
+                shutil.copy2(src, inner / rel)
+            elif src.is_dir():
+                dst = inner / rel
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
+        if gi.exists() and not (inner / ".gitignore").exists():
+            shutil.copy2(gi, inner / ".gitignore")
+        bak = old.with_name(old.name + "__cpm_bak")
+        old.rename(bak)
+        inner.rename(old)
+        shutil.rmtree(bak, ignore_errors=True)
+    return True, f"已换装 -> {ref}（保留本地文件 {len(keep)} 项）"
+
+
+def update_asset(ctx, a, dry_run, out=print):
+    p = a.plan or {}
+    t = p.get("type")
+    if not a.managed or t is None:
+        return False, "不管理，跳过"
+    if t == "claude-plugin":
+        argv = ["claude", "plugin", "update", p["id"]]
+        if dry_run:
+            out(f"  将执行: {' '.join(argv)}")
+            return True, "dry-run"
+        rc, _, err = run_cmd(argv)
+        return rc == 0, err.strip() or "已委托 claude plugin update"
+    if t == "print":
+        out(f"  手动执行 -> {p['cmd']}")
+        return True, "打印命令"
+    if t == "git":
+        argv = ["git", "-C", a.dir, "pull", "--ff-only"]
+        if dry_run:
+            out(f"  将执行: {' '.join(argv)}")
+            return True, "dry-run"
+        rc, o, e = run_cmd(argv)
+        msg = (o + e).strip()
+        if rc != 0:
+            msg += "（本地有改动或分叉；cpm 不强 pull，请手工处理）"
+        return rc == 0, msg or "已 pull"
+    if t == "zip":
+        return update_skill_zip(a, dry_run, out)
+    return False, f"未知 plan 类型 {t}"
 
 
 def cmd_update(ctx, names, all_, dry_run):
