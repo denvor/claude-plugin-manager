@@ -35,7 +35,10 @@ class TestLoadPlugins(unittest.TestCase):
         self.assertTrue(by["aa"].enabled)          # 显式 true
         self.assertFalse(by["cc"].enabled)         # 显式 false
         self.assertIn("已禁用", by["cc"].notes)
-        self.assertTrue(by["bb"].enabled)          # 未声明 → 默认启用
+        # enabledPlugins 是白名单：无条目=禁用（真机实证：claude plugin list 对
+        # 不在字典中的 4 个插件全部显示 disabled，且盘上无 false 条目）
+        self.assertFalse(by["bb"].enabled)
+        self.assertIn("已禁用", by["bb"].notes)
 
     def test_status_table_offline_no_expected(self):
         out = io.StringIO()

@@ -94,7 +94,8 @@ def load_plugins(ctx):
         name, mp = pid.split("@", 1)
         rec = recs[0]  # 本机全部 user scope；如出现多 scope 记录，取第一条
         ver = rec.get("version") or (rec.get("gitCommitSha") or "?")[:12]
-        on = enabled.get(pid, True)
+        # enabledPlugins 是白名单：无条目=禁用（真机实证，与 claude plugin list 一致）
+        on = bool(enabled.get(pid, False))
         res.append(Asset(
             kind="plugin", name=name, current=ver,
             source=f"marketplace:{mp}", enabled=on,
