@@ -18,6 +18,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 EXIT_OK, EXIT_OUTDATED, EXIT_PARTIAL, EXIT_BROKEN = 0, 1, 2, 3
+REFRESH_TIMEOUT = 300  # marketplace 刷新含网络 git（真机实测可超 60s），单独放宽
 
 
 class Broken(Exception):
@@ -35,7 +36,10 @@ def fetch_url(url, timeout=15):
 
 
 def run_cmd(argv, cwd=None, timeout=60):
-    p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    try:
+        p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, "", f"子进程超时({timeout}s): {' '.join(map(str, argv))}"
     return p.returncode, p.stdout, p.stderr
 
 
@@ -344,7 +348,7 @@ def check_mcps(ctx, assets):
 
 def cmd_check_update(ctx, as_json=False):
     assets = load_assets(ctx)
-    rc, _, err = run_cmd(["claude", "plugin", "marketplace", "update"])
+    rc, _, err = run_cmd(["claude", "plugin", "marketplace", "update"], timeout=REFRESH_TIMEOUT)
     refresh_ok = rc == 0
     if not refresh_ok:
         print(f"cpm: marketplace 刷新失败，比对结果可能偏旧: {err.strip()}", file=sys.stderr)
@@ -426,7 +430,7 @@ def update_asset(ctx, a, dry_run, out=print):
         if dry_run:
             out(f"  将执行: {' '.join(argv)}")
             return True, "dry-run"
-        rc, _, err = run_cmd(argv)
+        rc, _, err = run_cmd(argv, timeout=REFRESH_TIMEOUT)
         return rc == 0, err.strip() or "已委托 claude plugin update"
     if t == "print":
         out(f"  手动执行 -> {p['cmd']}")
@@ -451,7 +455,7 @@ def cmd_update(ctx, names, all_, dry_run):
         print("cpm update: 请给出资产名或使用 --all", file=sys.stderr)
         return EXIT_BROKEN
     assets = load_assets(ctx)
-    run_cmd(["claude", "plugin", "marketplace", "update"])
+    run_cmd(["claude", "plugin", "marketplace", "update"], timeout=REFRESH_TIMEOUT)
     # 刷新失败不致命：更新委托官方命令，由其自行报错
     check_plugins(ctx, assets)
     check_skills(ctx, assets)

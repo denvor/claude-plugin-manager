@@ -33,3 +33,14 @@ class TestScaffold(unittest.TestCase):
         bad.write_text("{oops")
         with self.assertRaises(cpm.Broken):
             cpm.load_json(bad)
+
+
+class TestRunCmdTimeout(unittest.TestCase):
+    def test_timeout_becomes_124_not_exception(self):
+        rc, out, err = cpm.run_cmd(["sleep", "3"], timeout=1)
+        self.assertEqual(rc, 124)
+        self.assertIn("超时", err)
+
+    def test_normal_run_unaffected(self):
+        rc, out, _ = cpm.run_cmd(["echo", "hi"])
+        self.assertEqual((rc, out.strip()), (0, "hi"))
