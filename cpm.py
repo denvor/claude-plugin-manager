@@ -256,8 +256,31 @@ def check_plugins(ctx, assets):
                 pass
 
 
+def gh_latest(repo):
+    """最新 release tag；无 release 的仓库退化到 tags 列表首位。失败 None。"""
+    b = fetch_url(f"https://api.github.com/repos/{repo}/releases/latest")
+    if b:
+        try:
+            t = json.loads(b)
+            if isinstance(t, dict) and t.get("tag_name"):
+                return t["tag_name"]
+        except Exception:
+            pass
+    b = fetch_url(f"https://api.github.com/repos/{repo}/tags")
+    if b:
+        try:
+            tags = json.loads(b)
+            if tags and isinstance(tags[0], dict):
+                return tags[0]["name"]
+        except Exception:
+            pass
+    return None
+
+
 def check_skills(ctx, assets):
-    pass   # 任务 6 实现
+    for a in assets:
+        if a.kind == "skill" and a.managed and a.source:
+            a.expected = gh_latest(a.source)
 
 
 def check_mcps(ctx, assets):

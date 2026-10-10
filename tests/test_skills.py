@@ -52,3 +52,32 @@ class TestSkillDiscovery(unittest.TestCase):
         a = {x.name: x for x in cpm.load_skills(self.ctx)}["ambig"]
         self.assertFalse(a.managed)
         self.assertIn("歧义", a.notes)
+
+
+class TestSkillCheck(unittest.TestCase):
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.home = fixture.build_home(Path(self._td.name))
+        self.ctx = fixture.test_ctx(self.home)
+        self.addCleanup(self._td.cleanup)
+
+    def test_releases_latest_and_degrade_to_tags(self):
+        fixture.patch_fetch(self, {
+            "anysearch-skill/releases/latest": {"tag_name": "v3.2.0"},
+            "foo/gitskill/releases/latest": {"message": "Not Found"},
+            "foo/gitskill/tags": [{"name": "v0.2.0"}, {"name": "v0.1.0"}],
+        })
+        assets = cpm.load_skills(self.ctx)
+        cpm.check_skills(self.ctx, assets)
+        by = {a.name: a for a in assets}
+        self.assertEqual(by["anysearch"].expected, "v3.2.0")
+        self.assertEqual(by["gitskill"].expected, "v0.2.0")   # 退化到 tags
+        self.assertIsNone(by["orphan"].expected)              # 不管理，跳过
+
+    def test_check_update_rows(self):
+        fixture.patch_fetch(self, {"releases/latest": {"tag_name": "v9.9.9"}})
+        assets = cpm.load_assets(self.ctx)
+        cpm.check_skills(self.ctx, assets)
+        by = {a.name: a for a in assets}
+        self.assertTrue(cpm.outdated(by["anysearch"].current, by["anysearch"].expected))
+        self.assertEqual(cpm.row_status(by["orphan"], checked=True), "不管理")
