@@ -130,3 +130,17 @@ class TestDisplayPolish(unittest.TestCase):
         for l in proj:
             self.assertNotIn("-> ?", l)          # 不管理行不显示比对箭头
         self.assertNotIn("|  |", text)            # notes 拼接不产生空的双竖线
+
+
+class TestAddWarning(unittest.TestCase):
+    def test_add_unknown_skill_dir_warns(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        home = fixture.build_home(Path(td.name))
+        ctx = fixture.test_ctx(home)
+        err = io.StringIO()
+        out = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(out):
+            rc = cpm.main(["add", "nosuchdir", "https://github.com/foo/x"], ctx=ctx)
+        self.assertEqual(rc, cpm.EXIT_OK)      # 记录仍成功（安装后即可生效）
+        self.assertIn("目录不存在", err.getvalue())

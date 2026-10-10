@@ -500,6 +500,8 @@ def cmd_add(ctx, skill, url):
     data.setdefault("skills", {})[skill] = {"source": url}
     ctx.cpm_json.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     print(f"✓ 已记录 {skill} 来源: {url}（{ctx.cpm_json}）")
+    if not (ctx.skills / skill).exists():
+        print(f"⚠ {ctx.skills / skill} 目录不存在：将在 skill 安装后生效", file=sys.stderr)
     return EXIT_OK
 
 
