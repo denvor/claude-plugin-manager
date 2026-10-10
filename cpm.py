@@ -6,6 +6,7 @@
 """
 import argparse
 import json
+import re
 import subprocess
 import sys
 import urllib.request
@@ -100,8 +101,66 @@ def load_plugins(ctx):
     return res
 
 
+GH_REPO = re.compile(r"github\.com[/:]([\w.\-]+)/([\w.\-]+)")
+
+
+def discover_skill_source(d, override):
+    """来源发现链（spec §4.2）：cpm.json override → .git/config remote → README 安装行。
+    返回 (owner/repo 或 None, 说明)。"""
+    if override and override.get("source"):
+        m = GH_REPO.search(override["source"])
+        if m:
+            return f"{m.group(1)}/{m.group(2).removesuffix('.git')}", "cpm.json"
+        return None, f"cpm.json 里的 source 不是 GitHub URL: {override['source']}"
+    cfg = d / ".git/config"
+    if cfg.exists():
+        m = GH_REPO.search(cfg.read_text(errors="ignore"))
+        if m:
+            return f"{m.group(1)}/{m.group(2).removesuffix('.git')}", ".git/config"
+    repos = set()
+    for fn in ("README.md", "SKILL.md"):
+        p = d / fn
+        if not p.exists():
+            continue
+        for line in p.read_text(errors="ignore").splitlines():
+            if re.search(r"install|download|release|clone", line, re.I):
+                for m in GH_REPO.finditer(line):
+                    repos.add(f"{m.group(1)}/{m.group(2).removesuffix('.git')}")
+    if len(repos) == 1:
+        return repos.pop(), "README pattern"
+    if len(repos) > 1:
+        return None, f"来源歧义 {sorted(repos)}，用 cpm add 定夺"
+    return None, "无线索"
+
+
+def skill_version(d):
+    sk = d / "SKILL.md"
+    if sk.exists():
+        m = re.search(r"^version:\s*([\w.\-]+)", sk.read_text(errors="ignore")[:4000], re.M)
+        if m:
+            return m.group(1)
+    rc, out, _ = run_cmd(["git", "-C", str(d), "rev-parse", "--short", "HEAD"])
+    return out.strip() if rc == 0 and out.strip() else "?"
+
+
 def load_skills(ctx):
-    return []          # 任务 5 实现
+    overrides = {}
+    if ctx.cpm_json.exists():
+        overrides = load_json(ctx.cpm_json).get("skills", {})
+    res = []
+    if not ctx.skills.exists():
+        return res
+    for d in sorted(p for p in ctx.skills.iterdir() if p.is_dir()):
+        src, how = discover_skill_source(d, overrides.get(d.name))
+        managed = src is not None
+        ptype = "git" if (d / ".git").exists() else ("zip" if managed else None)
+        res.append(Asset(
+            kind="skill", name=d.name, current=skill_version(d),
+            source=src, managed=managed, dir=str(d),
+            notes="" if managed else f"不管理（{how}；用 cpm add {d.name} <url> 补录）",
+            plan={"type": ptype, "dir": str(d)} if ptype else None,
+        ))
+    return res
 
 
 def load_mcps(ctx):

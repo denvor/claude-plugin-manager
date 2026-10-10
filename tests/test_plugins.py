@@ -118,7 +118,7 @@ class TestCheckUpdate(unittest.TestCase):
             return (0, "9.9.9\n", "")          # 辅助通道版本号
 
         fixture.patch_run(self, {("claude",): claude, ("npm",): npm})
-        fixture.patch_fetch(self, {})          # 本任务 skills/mcps 为空，断网无影响
+        fixture.patch_fetch(self, {"releases/latest": {"tag_name": "v9.9.9"}})  # 任务5回归修补：skills 行需 release 桩
         self.addCleanup(self._td.cleanup)
 
     def _rows(self):
