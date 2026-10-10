@@ -110,3 +110,23 @@ class TestAddCommand(unittest.TestCase):
         o = {a.name: a for a in cpm.load_skills(ctx)}["orphan"]
         self.assertTrue(o.managed)
         self.assertEqual(o.source, "foo/orphan-skill")
+
+
+class TestDisplayPolish(unittest.TestCase):
+    def test_unmanaged_rows_show_no_arrow_and_no_double_pipe(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        home = fixture.build_home(Path(td.name))
+        ctx = fixture.test_ctx(home)
+        fixture.patch_run(self, {("claude",): lambda a, c: (0, "", ""),
+                                 ("npm",): lambda a, c: (0, "9.9.9", "")})
+        fixture.patch_fetch(self, {"releases/latest": {"tag_name": "v9.9.9"}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cpm.main(["check-update"], ctx=ctx)
+        text = out.getvalue()
+        proj = [l for l in text.splitlines() if "playwright@" in l]
+        self.assertTrue(proj)
+        for l in proj:
+            self.assertNotIn("-> ?", l)          # 不管理行不显示比对箭头
+        self.assertNotIn("|  |", text)            # notes 拼接不产生空的双竖线

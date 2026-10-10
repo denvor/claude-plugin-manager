@@ -274,8 +274,9 @@ def render(assets, as_json, checked):
                           ensure_ascii=False, indent=2)
     lines = []
     for a in assets:
-        tgt = f"{a.current} -> {a.expected or '?'}" if checked else (a.current or "?")
-        note = f"  | {a.notes}" if a.notes else ""
+        # 不管理的行没有"应有版本"可比，不显示箭头；notes 避免产生空的双竖线
+        tgt = f"{a.current} -> {a.expected or '?'}" if (checked and a.managed) else (a.current or "?")
+        note = f"  | {a.notes.lstrip(' |')}" if a.notes else ""
         lines.append(f"{a.kind:<6} {a.name:<24} {tgt:<30} {row_status(a, checked)}{note}")
     return "\n".join(lines)
 
@@ -333,8 +334,16 @@ def gh_latest(repo):
 
 def check_skills(ctx, assets):
     for a in assets:
-        if a.kind == "skill" and a.managed and a.source:
-            a.expected = gh_latest(a.source)
+        if a.kind != "skill" or not a.managed or not a.source:
+            continue
+        a.expected = gh_latest(a.source)
+        if a.expected is None and a.plan and a.plan.get("type") == "git":
+            # 上游无 release 无 tag（纯分支发布，真机案例 op7418/Humanizer-zh）：对比远端默认分支
+            rc, out, _ = run_cmd(["git", "-C", a.dir, "ls-remote", "origin", "HEAD"])
+            if rc == 0 and out.strip():
+                a.expected = out.split()[0]
+            else:
+                a.notes += " 无 release/tag，远程分支也读不到"
 
 
 def check_mcps(ctx, assets):
