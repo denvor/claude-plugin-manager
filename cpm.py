@@ -332,18 +332,28 @@ def gh_latest(repo):
     return None
 
 
+def gh_head(repo):
+    """默认分支 HEAD 的 commit sha（API）。本环境 github.com:443 不可达、
+    api.github.com 可达，分支对比必须走 API 而非 ls-remote（真机实证）。"""
+    b = fetch_url(f"https://api.github.com/repos/{repo}/commits/HEAD")
+    if b:
+        try:
+            return json.loads(b).get("sha")
+        except Exception:
+            pass
+    return None
+
+
 def check_skills(ctx, assets):
     for a in assets:
         if a.kind != "skill" or not a.managed or not a.source:
             continue
         a.expected = gh_latest(a.source)
         if a.expected is None and a.plan and a.plan.get("type") == "git":
-            # 上游无 release 无 tag（纯分支发布，真机案例 op7418/Humanizer-zh）：对比远端默认分支
-            rc, out, _ = run_cmd(["git", "-C", a.dir, "ls-remote", "origin", "HEAD"])
-            if rc == 0 and out.strip():
-                a.expected = out.split()[0]
-            else:
-                a.notes += " 无 release/tag，远程分支也读不到"
+            # 上游无 release 无 tag（纯分支发布，真机案例 op7418/Humanizer-zh）：对比默认分支 HEAD
+            a.expected = gh_head(a.source)
+            if a.expected is None:
+                a.notes += " 无 release/tag，API 也取不到分支头"
 
 
 def check_mcps(ctx, assets):

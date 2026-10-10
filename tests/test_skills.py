@@ -180,7 +180,8 @@ class TestSkillUpdate(unittest.TestCase):
 
 
 class TestSkillNoReleaseFallback(unittest.TestCase):
-    """真实案例：op7418/Humanizer-zh 无 release 也无 tag（纯分支发布）→ 退化 ls-remote HEAD。"""
+    """真实案例：op7418/Humanizer-zh 无 release 也无 tag（纯分支发布）→ 退化 API commits/HEAD。
+    本环境 github.com:443 不可达而 api.github.com 可达，ls-remote 不可用（真机实证）。"""
 
     def setUp(self):
         self._td = tempfile.TemporaryDirectory()
@@ -188,22 +189,21 @@ class TestSkillNoReleaseFallback(unittest.TestCase):
         self.ctx = fixture.test_ctx(self.home)
         self.addCleanup(self._td.cleanup)
 
-    def test_git_skill_falls_back_to_remote_head(self):
-        fixture.patch_fetch(self, {})   # 无 release 无 tag
-        fixture.patch_run(self, {("git",): lambda a, c:
-                                 (0, "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d\tHEAD\n", "")})
+    def test_git_skill_falls_back_to_api_head(self):
+        fixture.patch_fetch(self, {   # 无 release 无 tag；commits/HEAD 返回默认分支 sha
+            "foo/gitskill/commits/HEAD": {"sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d"},
+        })
         assets = cpm.load_skills(self.ctx)
         cpm.check_skills(self.ctx, assets)
         by = {a.name: a for a in assets}
-        self.assertTrue(by["gitskill"].expected.startswith("d4e5f6a7"))
+        self.assertEqual(by["gitskill"].expected, "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d")
         self.assertFalse(cpm.outdated("d4e5f6a", by["gitskill"].expected))  # 短前缀=最新
         self.assertTrue(cpm.outdated("f4518a8", by["gitskill"].expected))   # 落后=可更新
-        # zip 型不用 ls-remote 兜底（无现装可对比的 remote 语义）
+        # zip 型不做分支兜底（换装依赖 release tag，无 tag 等于无法更新）
         self.assertIsNone(by["anysearch"].expected)
 
-    def test_lsremote_failure_stays_question_with_note(self):
-        fixture.patch_fetch(self, {})
-        fixture.patch_run(self, {("git",): lambda a, c: (128, "", "Could not read from remote")})
+    def test_api_head_failure_stays_question_with_note(self):
+        fixture.patch_fetch(self, {})   # 全部网络失败
         assets = cpm.load_skills(self.ctx)
         cpm.check_skills(self.ctx, assets)
         g = {a.name: a for a in assets}["gitskill"]
