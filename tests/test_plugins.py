@@ -101,3 +101,55 @@ class TestPluginExpected(unittest.TestCase):
         self.assertFalse(cpm.outdated("3.1.1", "v3.1.1"))
         self.assertIsNone(cpm.outdated("", "2.0.0"))               # 空值不可判
         self.assertIsNone(cpm.outdated("2.0.0", None))
+
+
+class TestCheckUpdate(unittest.TestCase):
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.home = fixture.build_home(Path(self._td.name))
+        self.ctx = fixture.test_ctx(self.home)
+        self.calls = []
+
+        def claude(argv, cwd):
+            self.calls.append(list(argv))
+            return (0, "", "")
+
+        def npm(argv, cwd):
+            return (0, "9.9.9\n", "")          # 辅助通道版本号
+
+        fixture.patch_run(self, {("claude",): claude, ("npm",): npm})
+        fixture.patch_fetch(self, {})          # 本任务 skills/mcps 为空，断网无影响
+        self.addCleanup(self._td.cleanup)
+
+    def _rows(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = cpm.cmd_check_update(self.ctx, as_json=True)
+        return rc, {r["name"]: r for r in json.loads(out.getvalue())}
+
+    def test_all_three_source_forms_detected_outdated(self):
+        rc, rows = self._rows()
+        self.assertEqual(rc, cpm.EXIT_OUTDATED)
+        self.assertEqual(["claude", "plugin", "marketplace", "update"], self.calls[0])
+        self.assertEqual(rows["aa"]["status"], "可更新")   # path 型：r2 前进
+        self.assertEqual(rows["bb"]["status"], "可更新")   # url 型：sha 不等
+        self.assertEqual(rows["cc"]["status"], "可更新")   # semver 1.0.0 vs 2.0.0
+
+    def test_auxiliary_npm_and_npx_notes(self):
+        _, rows = self._rows()
+        self.assertIn("npm 通道 9.9.9", rows["aa"]["notes"])      # cache 有 package.json
+        self.assertIn("npx 自更新", rows["aa"]["notes"])           # cache 有 .mcp.json npx
+        self.assertNotIn("npm 通道", rows["bb"]["notes"])          # 无 package.json
+
+    def test_marketplace_refresh_failure_forces_partial(self):
+        fixture.patch_run(self, {("claude",): lambda a, c: (1, "", "网络断"),
+                                 ("npm",): lambda a, c: (0, "9.9.9", "")})
+        rc, _ = self._rows()
+        self.assertEqual(rc, cpm.EXIT_PARTIAL)
+
+    def test_human_table_shows_arrows(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cpm.cmd_check_update(self.ctx, as_json=False)
+        self.assertIn("->", out.getvalue())
+        self.assertIn("可更新", out.getvalue())

@@ -172,8 +172,52 @@ def cmd_status(ctx):
     return EXIT_OK
 
 
+def check_plugins(ctx, assets):
+    for a in assets:
+        if a.kind != "plugin":
+            continue
+        entry, mp_dir = find_marketplace_entry(ctx, a.plan["marketplace"], a.name)
+        if entry is None:
+            a.expected = None
+            a.notes += " | marketplace 无此条目"
+            continue
+        a.expected, a.source = plugin_expected(mp_dir, entry)
+        ip = Path(a.plan["installPath"]) if a.plan.get("installPath") else None
+        if ip and (ip / "package.json").exists():            # 辅助检测：npm 发布通道（spec §4.1）
+            pkg = json.loads((ip / "package.json").read_text()).get("name")
+            rc, out, _ = run_cmd(["npm", "view", pkg, "version"])
+            if rc == 0 and out.strip():
+                a.notes += f" | npm 通道 {out.strip()}"
+        if ip and (ip / ".mcp.json").exists():               # npx 运行时插件自标注
+            try:
+                d = json.loads((ip / ".mcp.json").read_text())
+                if any(isinstance(s, dict) and s.get("command") == "npx" for s in d.values()):
+                    a.notes += " | 运行时经 npx 自更新，无需管理"
+            except json.JSONDecodeError:
+                pass
+
+
+def check_skills(ctx, assets):
+    pass   # 任务 6 实现
+
+
+def check_mcps(ctx, assets):
+    pass   # 任务 8 实现
+
+
 def cmd_check_update(ctx, as_json=False):
-    raise NotImplementedError  # 任务 4
+    assets = load_assets(ctx)
+    rc, _, err = run_cmd(["claude", "plugin", "marketplace", "update"])
+    refresh_ok = rc == 0
+    if not refresh_ok:
+        print(f"cpm: marketplace 刷新失败，比对结果可能偏旧: {err.strip()}", file=sys.stderr)
+    check_plugins(ctx, assets)
+    check_skills(ctx, assets)
+    check_mcps(ctx, assets)
+    print(render(assets, as_json, checked=True))
+    failed = (not refresh_ok) or any(a.expected is None for a in assets if a.managed)
+    upd = any(outdated(a.current, a.expected) for a in assets if a.expected)
+    return EXIT_PARTIAL if failed else (EXIT_OUTDATED if upd else EXIT_OK)
 
 
 def cmd_update(ctx, names, all_, dry_run):
