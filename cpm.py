@@ -80,7 +80,24 @@ def load_assets(ctx):
 
 
 def load_plugins(ctx):
-    return []          # 任务 2 实现
+    inst = load_json(ctx.plugins_json).get("plugins", {})
+    enabled = {}
+    if ctx.settings.exists():
+        enabled = load_json(ctx.settings).get("enabledPlugins", {})
+    res = []
+    for pid, recs in inst.items():
+        name, mp = pid.split("@", 1)
+        rec = recs[0]  # 本机全部 user scope；如出现多 scope 记录，取第一条
+        ver = rec.get("version") or (rec.get("gitCommitSha") or "?")[:12]
+        on = enabled.get(pid, True)
+        res.append(Asset(
+            kind="plugin", name=name, current=ver,
+            source=f"marketplace:{mp}", enabled=on,
+            notes="" if on else "已禁用",
+            plan={"type": "claude-plugin", "id": pid, "marketplace": mp,
+                  "installPath": rec.get("installPath", "")},
+        ))
+    return res
 
 
 def load_skills(ctx):
@@ -91,8 +108,30 @@ def load_mcps(ctx):
     return []          # 任务 8 实现
 
 
+def outdated(current, expected):
+    return None  # 任务 3 实现
+
+
+def row_status(a, checked):
+    if not a.managed:
+        return "不管理"
+    if not checked:
+        return "待检测"
+    if a.expected is None:
+        return "?"
+    return "可更新" if outdated(a.current, a.expected) else "最新"
+
+
 def render(assets, as_json, checked):
-    return json.dumps([], ensure_ascii=False) if as_json else "(无资产)"  # 任务 4 实现
+    if as_json:
+        return json.dumps([{**asdict(a), "status": row_status(a, checked)} for a in assets],
+                          ensure_ascii=False, indent=2)
+    lines = []
+    for a in assets:
+        tgt = f"{a.current} -> {a.expected or '?'}" if checked else (a.current or "?")
+        note = f"  | {a.notes}" if a.notes else ""
+        lines.append(f"{a.kind:<6} {a.name:<24} {tgt:<30} {row_status(a, checked)}{note}")
+    return "\n".join(lines)
 
 
 def cmd_status(ctx):
