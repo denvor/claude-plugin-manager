@@ -78,7 +78,7 @@ Asset = { kind, name, current, source, latest, update_plan, managed, notes }
 优先级链：`cpm.json` 显式条目 → skill 目录 `.git/config` 的 remote → 解析 README.md/SKILL.md 中 `github.com/<owner>/<repo>` 模式。README 解析的确定性规则：只看匹配 `/install|download|release|clone/i` 的行，取其中第一个 repo URL；若这些行中出现 ≥2 个不同的 `<owner>/<repo>` → 判为歧义，status 标注并要求 `cpm add` 定夺。发现失败 → 列为 `⚠ unmanaged`，check-update 跳过。
 
 当前版本：SKILL.md frontmatter `version:` 字段（无则视为与 source 绑定，不做 semver 比较，只比 ref/commit）。
-最新版本：GitHub API `releases/latest`（无 release 的仓库退化到 `git ls-remote --tags`）。
+最新版本三级链（执行期真机修正，原两级不够）：GitHub API `releases/latest` → `tags` 首位 → **git 型 skill 再退化 `commits/HEAD`（默认分支 sha）**。纯分支发布上游真实存在（op7418/Humanizer-zh，releases 404 且 tags 为空）。兜底必须走 API 而非 `git ls-remote`：本机环境 github.com:443 不可达而 api.github.com 可达（真机实证）。zip 型不做分支兜底——其换装依赖 release tag，无 tag 即无法更新。
 
 执行（二选一，取决于目录形态）：
 
