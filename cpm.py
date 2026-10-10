@@ -446,11 +446,37 @@ def update_asset(ctx, a, dry_run, out=print):
 
 
 def cmd_update(ctx, names, all_, dry_run):
-    raise NotImplementedError  # 任务 9
+    if not names and not all_:
+        print("cpm update: 请给出资产名或使用 --all", file=sys.stderr)
+        return EXIT_BROKEN
+    assets = load_assets(ctx)
+    run_cmd(["claude", "plugin", "marketplace", "update"])
+    # 刷新失败不致命：更新委托官方命令，由其自行报错
+    check_plugins(ctx, assets)
+    check_skills(ctx, assets)
+    check_mcps(ctx, assets)
+    if all_:
+        targets = [a for a in assets if outdated(a.current, a.expected)]
+    else:
+        want = set(names)
+        targets = [a for a in assets if a.name in want or (a.plan or {}).get("id") in want]
+        for m in sorted(want - {a.name for a in targets}):
+            print(f"  未找到资产: {m}", file=sys.stderr)
+    ok, failed = 0, 0
+    for a in targets:
+        good, msg = update_asset(ctx, a, dry_run)
+        print(f"{a.kind}  {a.name}: {'✓' if good else '✗'} {msg}")
+        ok, failed = ok + (1 if good else 0), failed + (0 if good else 1)
+    print(f"汇总: 成功 {ok} / 失败 {failed}" + ("（dry-run）" if dry_run else ""))
+    return EXIT_OK if failed == 0 else EXIT_PARTIAL
 
 
 def cmd_add(ctx, skill, url):
-    raise NotImplementedError  # 任务 9
+    data = load_json(ctx.cpm_json) if ctx.cpm_json.exists() else {"skills": {}}
+    data.setdefault("skills", {})[skill] = {"source": url}
+    ctx.cpm_json.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    print(f"✓ 已记录 {skill} 来源: {url}（{ctx.cpm_json}）")
+    return EXIT_OK
 
 
 def main(argv=None, ctx=None):

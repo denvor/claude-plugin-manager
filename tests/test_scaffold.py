@@ -15,7 +15,9 @@ class TestScaffold(unittest.TestCase):
         self.addCleanup(self._td.cleanup)
 
     def test_ctx_paths_point_into_fake_home(self):
-        ctx = cpm.Ctx(self.home, node_modules=self.home / "node_modules")
+        # cpm_json 显式指到临时目录：任务 9 后仓库里有真实 cpm.json，默认路径会污染本断言
+        ctx = cpm.Ctx(self.home, node_modules=self.home / "node_modules",
+                      cpm_json=self.home / "cpm.json")
         self.assertTrue(ctx.plugins_json.exists())
         self.assertTrue(ctx.marketplaces.exists())
         self.assertTrue(ctx.claude_json.exists())
