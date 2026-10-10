@@ -167,8 +167,53 @@ def load_skills(ctx):
     return res
 
 
+def find_npm_pkg(nm, cmd):
+    """全局 npm 树里按 bin 名反查包（spec §4.3：~/.claude.json 记的是 bin 名）。"""
+    nm = Path(nm)
+    if not nm.exists():
+        return None, None
+    dirs = [p for p in nm.iterdir() if p.is_dir()]
+    for p in [q for q in dirs if q.name.startswith("@")]:
+        dirs.extend(r for r in p.iterdir() if r.is_dir())
+    for p in dirs:
+        pj = p / "package.json"
+        if not pj.exists():
+            continue
+        try:
+            d = json.loads(pj.read_text())
+        except json.JSONDecodeError:
+            continue
+        bins = d.get("bin")
+        if isinstance(bins, str):
+            bins = {d.get("name", ""): bins}
+        if isinstance(bins, dict) and cmd in bins:
+            return d.get("name"), p
+        if d.get("name") == cmd:
+            return d.get("name"), p
+    return None, None
+
+
 def load_mcps(ctx):
-    return []          # 任务 8 实现
+    cfg = load_json(ctx.claude_json)
+    res = []
+    for name, srv in cfg.get("mcpServers", {}).items():
+        cmd = srv.get("command", "")
+        pkg, root = find_npm_pkg(ctx.node_modules, cmd)
+        if pkg:
+            ver = json.loads((root / "package.json").read_text()).get("version", "?")
+            res.append(Asset(kind="mcp", name=name, current=ver,
+                             source=f"npm:{pkg}",
+                             plan={"type": "print", "pkg": pkg,
+                                   "cmd": f"sudo npm i -g {pkg}@<latest>"}))
+        else:
+            res.append(Asset(kind="mcp", name=name,
+                             current=srv.get("type", "stdio"),
+                             managed=False, notes="非全局 npm 装法或包未找到，来源未知"))
+    for proj, pv in cfg.get("projects", {}).items():
+        for name in pv.get("mcpServers", {}):
+            res.append(Asset(kind="mcp", name=f"{name}@{proj}", current="(项目级)",
+                             managed=False, notes="项目级配置；与官方插件重叠，cpm 不处理"))
+    return res
 
 
 def find_marketplace_entry(ctx, mp_name, plugin_name):
@@ -288,7 +333,12 @@ def check_skills(ctx, assets):
 
 
 def check_mcps(ctx, assets):
-    pass   # 任务 8 实现
+    for a in assets:
+        if a.kind == "mcp" and a.plan and a.plan.get("type") == "print":
+            rc, out, _ = run_cmd(["npm", "view", a.plan["pkg"], "version"])
+            if rc == 0 and out.strip():
+                a.expected = out.strip()
+                a.plan["cmd"] = f"sudo npm i -g {a.plan['pkg']}@{out.strip()}"
 
 
 def cmd_check_update(ctx, as_json=False):
