@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import tempfile
 import urllib.request
 import zipfile
@@ -392,14 +393,28 @@ def check_mcps(ctx, assets):
 
 
 def cmd_check_update(ctx, as_json=False):
+    # 进度一律走 stderr：stdout 保持纯净（--json 可直接被管道消费）
+    t0 = time.time()
+    say = lambda m: print(m, file=sys.stderr, flush=True)
     assets = load_assets(ctx)
+    n = {"plugin": 0, "skill": 0, "mcp": 0}
+    for a in assets:
+        n[a.kind] += 1
+    say(f"cpm: 共 {len(assets)} 项（plugin {n['plugin']} / skill {n['skill']} / mcp {n['mcp']}）")
+    say("cpm: 刷新 marketplace（网络 git，最长等 5 分钟）…")
     rc, _, err = run_cmd(["claude", "plugin", "marketplace", "update"], timeout=REFRESH_TIMEOUT)
     refresh_ok = rc == 0
+    say(f"cpm: marketplace 刷新 {'成功' if refresh_ok else '失败'}（{time.time() - t0:.1f}s）")
     if not refresh_ok:
-        print(f"cpm: marketplace 刷新失败，比对结果可能偏旧: {err.strip()}", file=sys.stderr)
+        say(f"cpm: 比对结果可能偏旧: {err.strip()}")
+    say("cpm: plugin 本地比对…")
     check_plugins(ctx, assets)
+    say("cpm: skill 联网检查（GitHub API）…")
     check_skills(ctx, assets)
+    say("cpm: mcp 检查（npm view）…")
     check_mcps(ctx, assets)
+    upd = sum(1 for a in assets if outdated(a.current, a.expected))
+    say(f"cpm: 完成，用时 {time.time() - t0:.1f}s，{upd} 项可更新")
     print(render(assets, as_json, checked=True))
     failed = (not refresh_ok) or any(a.expected is None for a in assets if a.managed)
     upd = any(outdated(a.current, a.expected) for a in assets if a.expected)

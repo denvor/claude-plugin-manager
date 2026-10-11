@@ -158,6 +158,16 @@ class TestCheckUpdate(unittest.TestCase):
         self.assertIn("->", out.getvalue())
         self.assertIn("可更新", out.getvalue())
 
+    def test_check_update_emits_progress_to_stderr(self):
+        err = io.StringIO()
+        out = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(out):
+            cpm.cmd_check_update(self.ctx)
+        text = err.getvalue()
+        self.assertIn("marketplace 刷新", text)      # 阶段进度可见
+        self.assertIn("用时", text)                   # 收尾耗时
+        self.assertNotIn("marketplace 刷新", out.getvalue())  # stdout 保持干净
+
 
 class TestNpmIdentity(unittest.TestCase):
     """npm 辅助通道须身份校验（真机案例：npm 同名包 superpowers=0.0.2 是无关占位包）。"""
