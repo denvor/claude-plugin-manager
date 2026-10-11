@@ -70,6 +70,9 @@ def build_home(root: Path) -> Path:
     }}
     (cl / "plugins").mkdir(parents=True, exist_ok=True)
     (cl / "plugins/installed_plugins.json").write_text(json.dumps(inst))
+    (cl / "plugins/known_marketplaces.json").write_text(json.dumps({
+        MARKET: {"source": {"source": "github", "repo": f"test-org/{MARKET}"},
+                 "installLocation": str(mp), "lastUpdated": "x"}}))
     (cl / "settings.json").write_text(json.dumps(
         {"enabledPlugins": {f"aa@{MARKET}": True, f"cc@{MARKET}": False}}))
 

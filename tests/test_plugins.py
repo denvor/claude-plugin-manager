@@ -207,3 +207,41 @@ class TestNpmIdentity(unittest.TestCase):
                                             "homepage": "https://github.com/test-org/aa-plugin"}),
                          "test-org/aa-plugin")
         self.assertIsNone(cpm.declared_repo({"source": "./plugins/cc"}))
+
+
+class TestPathWithoutDotGit(unittest.TestCase):
+    """真机形态：官方 update 后 clone 无 .git → 路径型改比远端 HEAD。"""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.home = fixture.build_home(Path(self._td.name))
+        self.ctx = fixture.test_ctx(self.home)
+        import shutil
+        shutil.rmtree(self.ctx.marketplaces / fixture.MARKET / ".git")
+        self.addCleanup(self._td.cleanup)
+
+    def test_falls_back_to_remote_head(self):
+        fixture.patch_fetch(self, {"test-org/claude-plugins-official/commits/HEAD":
+                                   {"sha": "9" * 40}})
+        assets = cpm.load_assets(self.ctx)
+        cpm.check_plugins(self.ctx, assets)
+        by = {a.name: a for a in assets}
+        self.assertEqual(by["frontend-design" if False else "aa"].expected, "9" * 40)
+        self.assertIn("远端 HEAD", by["aa"].notes)
+
+class TestEffectiveComparison(unittest.TestCase):
+    """对比对象须是账本 gitCommitSha 而非展示 version（superpowers 假阳性修正）。"""
+
+    def test_url_form_uses_commit_not_version(self):
+        pin = "5bf4e78011075bcfc0dc295f075bcfc0dc295f0724994cd123ee71"[:40]
+        up = cpm.Asset(kind="plugin", name="x", current="6.4.1",
+                       commit=pin, expected=pin)
+        self.assertFalse(cpm.is_outdated(up))          # 账本 sha == pin → 最新
+        down = cpm.Asset(kind="plugin", name="x", current="6.4.1",
+                         commit="f2cbfbefebbfef77321e4c9abc9e949826bea9d7", expected=pin)
+        self.assertTrue(cpm.is_outdated(down))
+
+    def test_row_status_and_targets_follow_is_outdated(self):
+        up = cpm.Asset(kind="plugin", name="x", current="6.4.1",
+                       commit="a" * 40, expected="a" * 40)
+        self.assertEqual(cpm.row_status(up, checked=True), "最新")

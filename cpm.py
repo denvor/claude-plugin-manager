@@ -66,6 +66,7 @@ class Asset:
     notes: str = ""
     plan: dict | None = None       # {"type": "claude-plugin"|"git"|"zip"|"print", ...}
     dir: str | None = None         # 仅 skill：安装目录
+    commit: str | None = None      # 仅 plugin：账本 gitCommitSha（比对的真实身份）
 
 
 class Ctx:
@@ -75,6 +76,7 @@ class Ctx:
         self.home = Path(home or Path.home())
         self.claude = self.home / ".claude"
         self.plugins_json = self.claude / "plugins/installed_plugins.json"
+        self.known_marketplaces = self.claude / "plugins/known_marketplaces.json"
         self.marketplaces = self.claude / "plugins/marketplaces"
         self.settings = self.claude / "settings.json"
         self.skills = self.claude / "skills"
@@ -103,6 +105,7 @@ def load_plugins(ctx):
         on = bool(enabled.get(pid, False))
         res.append(Asset(
             kind="plugin", name=name, current=ver,
+            commit=rec.get("gitCommitSha"),
             source=f"marketplace:{mp}", enabled=on,
             notes="" if on else "已禁用",
             plan={"type": "claude-plugin", "id": pid, "marketplace": mp,
@@ -259,6 +262,17 @@ def outdated(current, expected):
     return True
 
 
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def is_outdated(a):
+    """plugin 的真实身份是账本 gitCommitSha：expected 为 sha 形态时禁止用展示 version 比对
+    （真机假阳性：superpowers version 6.4.1 vs 钉定 sha）。"""
+    cur = a.commit if (a.kind == "plugin" and a.commit
+                       and a.expected and _SHA_RE.match(a.expected)) else a.current
+    return outdated(cur, a.expected)
+
+
 def row_status(a, checked):
     if not a.managed:
         return "不管理"
@@ -266,7 +280,7 @@ def row_status(a, checked):
         return "待检测"
     if a.expected is None:
         return "?"
-    return "可更新" if outdated(a.current, a.expected) else "最新"
+    return "可更新" if is_outdated(a) else "最新"
 
 
 def render(assets, as_json, checked):
@@ -285,6 +299,17 @@ def render(assets, as_json, checked):
 def cmd_status(ctx):
     print(render(load_assets(ctx), False, checked=False))
     return EXIT_OK
+
+
+def marketplace_slug(ctx, mp_name):
+    """marketplace 的 GitHub owner/repo（known_marketplaces.json 的 source 声明）。"""
+    if not ctx.known_marketplaces.exists():
+        return None
+    src = load_json(ctx.known_marketplaces).get(mp_name, {}).get("source", {})
+    if src.get("source") == "github" and src.get("repo"):
+        return src["repo"]
+    m = GH_REPO.search(src.get("url", "")) if src.get("url") else None
+    return f"{m.group(1)}/{m.group(2).removesuffix('.git')}" if m else None
 
 
 def declared_repo(entry):
@@ -319,6 +344,16 @@ def check_plugins(ctx, assets):
             a.notes += " | marketplace 无此条目"
             continue
         a.expected, a.source = plugin_expected(mp_dir, entry)
+        if a.expected is None and isinstance(entry.get("source"), str) \
+                and entry["source"].startswith("./"):
+            # 真机形态：官方 update 后 clone 无 .git → 改比 marketplace 远端 HEAD
+            #（账本 gitCommitSha 记录的正是安装时的 repo HEAD，见 0620a687 同值现象）
+            slug = marketplace_slug(ctx, a.plan["marketplace"])
+            head = gh_head(slug) if slug else None
+            if head:
+                a.expected = head
+                a.source = f"marketplace 远端 HEAD {slug}"
+                a.notes += " | 本地无 .git，改用远端 HEAD 对比"
         ip = Path(a.plan["installPath"]) if a.plan.get("installPath") else None
         if ip and (ip / "package.json").exists():            # 辅助检测：npm 发布通道（需身份校验）
             pkg = json.loads((ip / "package.json").read_text()).get("name")
@@ -413,11 +448,11 @@ def cmd_check_update(ctx, as_json=False):
     check_skills(ctx, assets)
     say("cpm: mcp 检查（npm view）…")
     check_mcps(ctx, assets)
-    upd = sum(1 for a in assets if outdated(a.current, a.expected))
+    upd = sum(1 for a in assets if is_outdated(a))
     say(f"cpm: 完成，用时 {time.time() - t0:.1f}s，{upd} 项可更新")
     print(render(assets, as_json, checked=True))
     failed = (not refresh_ok) or any(a.expected is None for a in assets if a.managed)
-    upd = any(outdated(a.current, a.expected) for a in assets if a.expected)
+    upd = any(is_outdated(a) for a in assets)
     return EXIT_PARTIAL if failed else (EXIT_OUTDATED if upd else EXIT_OK)
 
 
@@ -521,7 +556,7 @@ def cmd_update(ctx, names, all_, dry_run):
     check_skills(ctx, assets)
     check_mcps(ctx, assets)
     if all_:
-        targets = [a for a in assets if outdated(a.current, a.expected)]
+        targets = [a for a in assets if is_outdated(a)]
     else:
         want = set(names)
         targets = [a for a in assets if a.name in want or (a.plan or {}).get("id") in want]
