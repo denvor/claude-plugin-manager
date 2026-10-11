@@ -276,11 +276,19 @@ _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
 
 def cmp_current(a):
-    """plugin 的真实身份是账本 gitCommitSha：expected 为 sha 形态时以 commit 为准
-    参与比对与展示（真机教训：superpowers `6.4.1 -> <sha>` 展示怪相与假阳性同根）。"""
+    """plugin 的真实身份是账本 gitCommitSha：expected 为 sha 形态时以 commit 为准参与比对。"""
     if (a.kind == "plugin" and a.commit
             and a.expected and _SHA_RE.match(a.expected)):
         return a.commit[:12]
+    return a.current
+
+
+def display_current(a):
+    """展示层：sha 比对形态下用 `语义版本/短sha` 双标识（用户要求）；
+    version 本身已是 sha 前缀（路径型账本形态）时不重复显示。"""
+    if (a.kind == "plugin" and a.commit and a.expected
+            and _SHA_RE.match(a.expected) and not a.commit.startswith(a.current)):
+        return f"{a.current}/{a.commit[:12]}"
     return a.current
 
 
@@ -305,7 +313,7 @@ def render(assets, as_json, checked):
     lines = []
     for a in assets:
         # 不管理的行没有"应有版本"可比，不显示箭头；notes 避免产生空的双竖线
-        cur = cmp_current(a) if (checked and a.managed) else a.current
+        cur = display_current(a) if (checked and a.managed) else a.current
         tgt = f"{cur} -> {a.expected or '?'}" if (checked and a.managed) else (cur or "?")
         note = f"  | {a.notes.lstrip(' |')}" if a.notes else ""
         lines.append(f"{a.kind:<6} {a.name:<24} {tgt:<30} {row_status(a, checked)}{note}")

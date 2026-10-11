@@ -308,13 +308,22 @@ class TestCloneVersionWinsOverGitLog(unittest.TestCase):
 class TestRenderIdentity(unittest.TestCase):
     """expected 为 sha 形态时，左列必须显示账本 commit 而非 version（消除 6.4.1 -> <sha> 的怪相）。"""
 
-    def test_sha_expected_shows_commit(self):
+    def test_sha_expected_shows_version_over_commit(self):
         a = cpm.Asset(kind="plugin", name="superpowers", current="6.4.1",
                       commit="5bf4e78011075bcfc0dc295f0724994cd123ee71",
                       expected="5bf4e78011075bcfc0dc295f0724994cd123ee71")
         line = cpm.render([a], False, True)
-        self.assertIn("5bf4e7801107 ->", line)
-        self.assertNotIn("6.4.1", line)
+        self.assertIn("6.4.1/5bf4e7801107 ->", line)      # 语义版本/身份哈希 双显示
         a2 = cpm.Asset(kind="plugin", name="sp", current="6.4.0",
                        commit="f2cbfbefebbfef77321e4c9abc9e949826bea9d7", expected=a.expected)
+        self.assertIn("6.4.0/f2cbfbefebbf ->", cpm.render([a2], False, True))
         self.assertIn("可更新", cpm.render([a2], False, True))
+
+    def test_ledger_version_is_sha_shows_single(self):
+        # 路径型账本 version 本就是 sha 前缀：不重复显示 "sha/sha"
+        a = cpm.Asset(kind="plugin", name="frontend-design", current="f359d43b4060",
+                      commit="f359d43b406057f1a8cdbc4ea93b827642c162e6",
+                      expected="f359d43b406057f1a8cdbc4ea93b827642c162e6")
+        line = cpm.render([a], False, True)
+        self.assertIn("f359d43b4060 ->", line)
+        self.assertNotIn("/", line.split("->")[0])
