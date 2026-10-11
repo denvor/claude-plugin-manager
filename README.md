@@ -30,6 +30,22 @@
 - **MCP（npm 全局装法）**：检测=`npm view`；执行**只打印** `sudo npm i -g <pkg>@<ver>`，
   cpm 自身永不使用特权。项目级 MCP 与插件重叠配置不处理，仅标注。
 
+## 网络与代理（本机环境）
+
+本机 **github.com:443 直连不可达**，git 系访问须走本地代理（全局 gitconfig 已配
+`http.https://github.com.proxy = http://127.0.0.1:20171`）；`api.github.com` 与 npm registry 直连可达。
+
+各通道对代理的依赖：
+
+| cpm 动作 | 走哪里 | 代理挂了会怎样 |
+|---|---|---|
+| check-update：skill 最新版 | api.github.com（urllib 直连） | 不受影响 |
+| check-update：mcp | npm registry 直连 | 不受影响 |
+| check-update：marketplace 刷新 | 官方 CLI → git → github.com | 刷新超时→降级告警，比对照常（结果可能偏旧） |
+| update：plugin | 官方 CLI → git | **失败**，需代理存活 |
+| update：skill zip 换装 | codeload.github.com（urllib） | **失败**——urllib 不读 gitconfig，须显式带环境变量：`https_proxy=http://127.0.0.1:20171 cpm update --all` |
+| update：mcp | 仅打印 sudo 命令 | 执行时 npm 直连可达 |
+
 ## 开发
 
 测试（全离线，注入网络层）：
