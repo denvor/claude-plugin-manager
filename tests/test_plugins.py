@@ -279,3 +279,27 @@ class TestCloneVersionFirst(unittest.TestCase):
         cpm.check_plugins(self.ctx, assets)
         by = {a.name: a for a in assets}
         self.assertEqual(by["aa"].expected, "b" * 40)
+
+
+class TestCloneVersionWinsOverGitLog(unittest.TestCase):
+    """有 .git 时路径型也须先比 clone plugin.json version（真机 code-simplifier 实证）。"""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.home = fixture.build_home(Path(self._td.name))
+        self.ctx = fixture.test_ctx(self.home)
+        self.mp = self.ctx.marketplaces / fixture.MARKET
+        pj = self.mp / "plugins/aa/.claude-plugin"
+        pj.mkdir(parents=True)
+        (pj / "plugin.json").write_text(json.dumps({"name": "aa", "version": "9.9.9"}))
+        self.addCleanup(self._td.cleanup)
+
+    def test_version_preferred_even_with_dotgit(self):
+        exp, src = cpm.plugin_expected(self.mp, {"name": "aa", "source": "./plugins/aa"})
+        self.assertEqual(exp, "9.9.9")
+        self.assertIn("plugin.json", src)
+
+    def test_no_version_falls_to_gitlog(self):
+        (self.mp / "plugins/aa/.claude-plugin/plugin.json").write_text(json.dumps({"name": "aa"}))
+        exp, src = cpm.plugin_expected(self.mp, {"name": "aa", "source": "./plugins/aa"})
+        self.assertEqual(len(exp), 40)   # 回到 git log sha 语义

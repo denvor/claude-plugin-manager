@@ -244,6 +244,16 @@ def plugin_expected(mp_dir, entry):
     if isinstance(src, dict):
         return src.get("sha"), f"url 钉 {src.get('url', '?')}"
     if isinstance(src, str) and src.startswith("./"):
+        # 路径型：clone 内 plugin.json 的 version 优先（官方 up_to_date 的真实基准，
+        # 真机实证：code-simplifier 账本 1.0.0 == clone 1.0.0 即最新，path commit 再新也不更新）
+        pj = Path(mp_dir) / src[2:] / ".claude-plugin" / "plugin.json"
+        if pj.exists():
+            try:
+                ver = json.loads(pj.read_text()).get("version")
+            except json.JSONDecodeError:
+                ver = None
+            if ver:
+                return ver, f"clone plugin.json（{src}）"
         rc, out, _ = run_cmd(["git", "-C", str(mp_dir), "log", "-1", "--format=%H", "--", src[2:]])
         if rc == 0 and out.strip():
             return out.strip(), f"marketplace path {src}"
