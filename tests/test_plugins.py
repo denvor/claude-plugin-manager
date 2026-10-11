@@ -303,3 +303,18 @@ class TestCloneVersionWinsOverGitLog(unittest.TestCase):
         (self.mp / "plugins/aa/.claude-plugin/plugin.json").write_text(json.dumps({"name": "aa"}))
         exp, src = cpm.plugin_expected(self.mp, {"name": "aa", "source": "./plugins/aa"})
         self.assertEqual(len(exp), 40)   # 回到 git log sha 语义
+
+
+class TestRenderIdentity(unittest.TestCase):
+    """expected 为 sha 形态时，左列必须显示账本 commit 而非 version（消除 6.4.1 -> <sha> 的怪相）。"""
+
+    def test_sha_expected_shows_commit(self):
+        a = cpm.Asset(kind="plugin", name="superpowers", current="6.4.1",
+                      commit="5bf4e78011075bcfc0dc295f0724994cd123ee71",
+                      expected="5bf4e78011075bcfc0dc295f0724994cd123ee71")
+        line = cpm.render([a], False, True)
+        self.assertIn("5bf4e7801107 ->", line)
+        self.assertNotIn("6.4.1", line)
+        a2 = cpm.Asset(kind="plugin", name="sp", current="6.4.0",
+                       commit="f2cbfbefebbfef77321e4c9abc9e949826bea9d7", expected=a.expected)
+        self.assertIn("可更新", cpm.render([a2], False, True))

@@ -275,12 +275,17 @@ def outdated(current, expected):
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
 
+def cmp_current(a):
+    """plugin 的真实身份是账本 gitCommitSha：expected 为 sha 形态时以 commit 为准
+    参与比对与展示（真机教训：superpowers `6.4.1 -> <sha>` 展示怪相与假阳性同根）。"""
+    if (a.kind == "plugin" and a.commit
+            and a.expected and _SHA_RE.match(a.expected)):
+        return a.commit[:12]
+    return a.current
+
+
 def is_outdated(a):
-    """plugin 的真实身份是账本 gitCommitSha：expected 为 sha 形态时禁止用展示 version 比对
-    （真机假阳性：superpowers version 6.4.1 vs 钉定 sha）。"""
-    cur = a.commit if (a.kind == "plugin" and a.commit
-                       and a.expected and _SHA_RE.match(a.expected)) else a.current
-    return outdated(cur, a.expected)
+    return outdated(cmp_current(a), a.expected)
 
 
 def row_status(a, checked):
@@ -300,7 +305,8 @@ def render(assets, as_json, checked):
     lines = []
     for a in assets:
         # 不管理的行没有"应有版本"可比，不显示箭头；notes 避免产生空的双竖线
-        tgt = f"{a.current} -> {a.expected or '?'}" if (checked and a.managed) else (a.current or "?")
+        cur = cmp_current(a) if (checked and a.managed) else a.current
+        tgt = f"{cur} -> {a.expected or '?'}" if (checked and a.managed) else (cur or "?")
         note = f"  | {a.notes.lstrip(' |')}" if a.notes else ""
         lines.append(f"{a.kind:<6} {a.name:<24} {tgt:<30} {row_status(a, checked)}{note}")
     return "\n".join(lines)
