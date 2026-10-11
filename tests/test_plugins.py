@@ -244,3 +244,38 @@ class TestEffectiveComparison(unittest.TestCase):
         up = cpm.Asset(kind="plugin", name="x", current="6.4.1",
                        commit="a" * 40, expected="a" * 40)
         self.assertEqual(cpm.row_status(up, checked=True), "最新")
+
+
+class TestCloneVersionFirst(unittest.TestCase):
+    """无 .git 兜底须先比 clone plugin.json version（官方判定基准），API 查询须跳过 merge。"""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.home = fixture.build_home(Path(self._td.name))
+        self.ctx = fixture.test_ctx(self.home)
+        import shutil
+        shutil.rmtree(self.ctx.marketplaces / fixture.MARKET / ".git")
+        pj = self.ctx.marketplaces / fixture.MARKET / "plugins/aa/.claude-plugin"
+        pj.mkdir(parents=True)
+        (pj / "plugin.json").write_text(json.dumps({"name": "aa", "version": "3.2.1"}))
+        self.addCleanup(self._td.cleanup)
+
+    def test_clone_plugin_version_preferred_over_api(self):
+        fixture.patch_fetch(self, {"commits?path=plugins/aa": [{"sha": "9" * 40, "parents": [{}]}]})
+        assets = cpm.load_assets(self.ctx)
+        cpm.check_plugins(self.ctx, assets)
+        by = {a.name: a for a in assets}
+        self.assertEqual(by["aa"].expected, "3.2.1")
+        self.assertIn("plugin.json", by["aa"].source)
+
+    def test_api_skips_merge_commits(self):
+        import shutil
+        shutil.rmtree(self.ctx.marketplaces / fixture.MARKET / "plugins/aa/.claude-plugin")
+        fixture.patch_fetch(self, {"commits?path=plugins/aa": [
+            {"sha": "a" * 40, "parents": [{}, {}]},          # merge，未触碰也算命中
+            {"sha": "b" * 40, "parents": [{}]},              # 真实最后修改
+        ]})
+        assets = cpm.load_assets(self.ctx)
+        cpm.check_plugins(self.ctx, assets)
+        by = {a.name: a for a in assets}
+        self.assertEqual(by["aa"].expected, "b" * 40)

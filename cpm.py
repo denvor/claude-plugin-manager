@@ -346,20 +346,34 @@ def check_plugins(ctx, assets):
         a.expected, a.source = plugin_expected(mp_dir, entry)
         if a.expected is None and isinstance(entry.get("source"), str) \
                 and entry["source"].startswith("./"):
-            # 真机形态：官方 update 后 clone 无 .git → 用 GitHub API 查该插件路径的最后提交
-            #（账本 gitCommitSha 的语义=最后触碰该 path 的 commit，分组同值现象实证）
-            slug = marketplace_slug(ctx, a.plan["marketplace"])
-            if slug:
-                b = fetch_url(f"https://api.github.com/repos/{slug}/commits"
-                              f"?path={entry['source'][2:]}&per_page=1")
+            # 真机形态：官方 update 后 clone 无 .git。对齐官方 up_to_date 判定：
+            # ① clone 里该插件 plugin.json 的 version（semver）优先；
+            # ② 没有 version 才查远端 path 最后提交（GitHub ?path= 会把未触碰该路径的
+            #    merge commit 也算进来——真机 code-simplifier 假阳性教训——须跳过 parents>1）
+            pj = mp_dir / entry["source"][2:] / ".claude-plugin" / "plugin.json"
+            ver = None
+            if pj.exists():
                 try:
-                    js = json.loads(b)[0]["sha"] if b else None
-                except Exception:
-                    js = None
-                if js:
-                    a.expected = js
-                    a.source = f"marketplace 远端 path 提交 {slug}"
-                    a.notes += " | 本地无 .git，改用远端 path 提交对比"
+                    ver = json.loads(pj.read_text()).get("version")
+                except json.JSONDecodeError:
+                    pass
+            if ver:
+                a.expected = ver
+                a.source = f"clone plugin.json（{entry['source']}）"
+            else:
+                slug = marketplace_slug(ctx, a.plan["marketplace"])
+                if slug:
+                    b = fetch_url(f"https://api.github.com/repos/{slug}/commits"
+                                  f"?path={entry['source'][2:]}&per_page=20")
+                    try:
+                        js = next((c["sha"] for c in json.loads(b)
+                                   if len(c.get("parents", [1])) == 1), None) if b else None
+                    except Exception:
+                        js = None
+                    if js:
+                        a.expected = js
+                        a.source = f"marketplace 远端 path 提交 {slug}"
+                        a.notes += " | 本地无 .git，改用远端 path 提交对比"
         ip = Path(a.plan["installPath"]) if a.plan.get("installPath") else None
         if ip and (ip / "package.json").exists():            # 辅助检测：npm 发布通道（需身份校验）
             pkg = json.loads((ip / "package.json").read_text()).get("name")
