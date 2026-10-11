@@ -118,7 +118,8 @@ class TestCheckUpdate(unittest.TestCase):
             return (0, "", "")
 
         def npm(argv, cwd):
-            return (0, "9.9.9\n", "")          # 辅助通道版本号
+            # 真格式：npm view <pkg> version repository.url 的多字段输出；仓库身份与 aa 的声明一致
+            return (0, "version = '9.9.9'\nrepository.url = 'git+https://github.com/test-org/aa-plugin.git'\n", "")
 
         fixture.patch_run(self, {("claude",): claude, ("npm",): npm})
         fixture.patch_fetch(self, {"releases/latest": {"tag_name": "v9.9.9"}})  # 任务5回归修补：skills 行需 release 桩
@@ -156,3 +157,43 @@ class TestCheckUpdate(unittest.TestCase):
             cpm.cmd_check_update(self.ctx, as_json=False)
         self.assertIn("->", out.getvalue())
         self.assertIn("可更新", out.getvalue())
+
+
+class TestNpmIdentity(unittest.TestCase):
+    """npm 辅助通道须身份校验（真机案例：npm 同名包 superpowers=0.0.2 是无关占位包）。"""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.home = fixture.build_home(Path(self._td.name))
+        self.ctx = fixture.test_ctx(self.home)
+        self.addCleanup(self._td.cleanup)
+
+    def _rows_with_npm(self, out_text):
+        fixture.patch_run(self, {("claude",): lambda a, c: (0, "", ""),
+                                 ("npm",): lambda a, c: (0, out_text, "")})
+        assets = cpm.load_assets(self.ctx)
+        cpm.check_plugins(self.ctx, assets)
+        return {a.name: a for a in assets}
+
+    def test_identity_match_notes_channel(self):
+        by = self._rows_with_npm("version = '9.9.9'\n"
+                                 "repository.url = 'git+https://github.com/test-org/aa-plugin.git'\n")
+        self.assertIn("npm 通道 9.9.9", by["aa"].notes)
+
+    def test_identity_mismatch_hidden(self):
+        by = self._rows_with_npm("version = '0.0.2'\n"
+                                 "repository.url = 'git+https://github.com/01studio/superpowers.git'\n")
+        self.assertNotIn("npm 通道", by["aa"].notes)
+
+    def test_missing_repo_field_hidden(self):
+        by = self._rows_with_npm("version = '0.0.2'\n")
+        self.assertNotIn("npm 通道", by["aa"].notes)
+
+    def test_declared_repo_forms(self):
+        self.assertEqual(cpm.declared_repo({"source": {"source": "url",
+                                                       "url": "https://github.com/obra/superpowers.git"}}),
+                         "obra/superpowers")
+        self.assertEqual(cpm.declared_repo({"source": "./plugins/aa",
+                                            "homepage": "https://github.com/test-org/aa-plugin"}),
+                         "test-org/aa-plugin")
+        self.assertIsNone(cpm.declared_repo({"source": "./plugins/cc"}))

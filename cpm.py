@@ -286,6 +286,28 @@ def cmd_status(ctx):
     return EXIT_OK
 
 
+def declared_repo(entry):
+    """marketplace 条目声明的上游仓库 owner/repo（url 型取 source.url，路径型取 homepage）。"""
+    src = entry.get("source")
+    url = src.get("url") if isinstance(src, dict) else None
+    url = url or entry.get("homepage")
+    m = GH_REPO.search(url) if url else None
+    return f"{m.group(1)}/{m.group(2).removesuffix('.git')}" if m else None
+
+
+def _npm_view_fields(argv_pkg):
+    """npm view <pkg> version repository.url 的 key = 'value' 行解析。"""
+    rc, out, _ = run_cmd(["npm", "view", argv_pkg, "version", "repository.url"])
+    if rc != 0:
+        return {}
+    fields = {}
+    for line in out.splitlines():
+        k, sep, v = line.partition(" = ")
+        if sep:
+            fields[k.strip()] = v.strip().strip("'\"")
+    return fields
+
+
 def check_plugins(ctx, assets):
     for a in assets:
         if a.kind != "plugin":
@@ -297,11 +319,15 @@ def check_plugins(ctx, assets):
             continue
         a.expected, a.source = plugin_expected(mp_dir, entry)
         ip = Path(a.plan["installPath"]) if a.plan.get("installPath") else None
-        if ip and (ip / "package.json").exists():            # 辅助检测：npm 发布通道（spec §4.1）
+        if ip and (ip / "package.json").exists():            # 辅助检测：npm 发布通道（需身份校验）
             pkg = json.loads((ip / "package.json").read_text()).get("name")
-            rc, out, _ = run_cmd(["npm", "view", pkg, "version"])
-            if rc == 0 and out.strip():
-                a.notes += f" | npm 通道 {out.strip()}"
+            f = _npm_view_fields(pkg)
+            npm_repo = f.get("repository.url")
+            m = GH_REPO.search(npm_repo) if npm_repo else None
+            want = declared_repo(entry)
+            # 真机教训：npm 同名包可能是无关占位包（superpowers=0.0.2），身份不符则不标注
+            if f.get("version") and m and want and f"{m.group(1)}/{m.group(2).removesuffix('.git')}".lower() == want.lower():
+                a.notes += f" | npm 通道 {f['version']}"
         if ip and (ip / ".mcp.json").exists():               # npx 运行时插件自标注
             try:
                 d = json.loads((ip / ".mcp.json").read_text())

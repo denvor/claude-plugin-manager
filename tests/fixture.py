@@ -37,7 +37,8 @@ def build_home(root: Path) -> Path:
     (mp / "plugins/aa").mkdir(parents=True)
     (mp / "plugins/aa/SKILL.md").write_text("aa v1\n")
     entries = [
-        {"name": "aa", "source": "./plugins/aa"},
+        {"name": "aa", "source": "./plugins/aa",
+         "homepage": "https://github.com/test-org/aa-plugin"},
         {"name": "bb", "source": {"source": "url",
                                   "url": "https://github.com/x/bb.git",
                                   "sha": "deadbeef00000000000000000000000000000000"}},
