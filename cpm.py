@@ -346,14 +346,20 @@ def check_plugins(ctx, assets):
         a.expected, a.source = plugin_expected(mp_dir, entry)
         if a.expected is None and isinstance(entry.get("source"), str) \
                 and entry["source"].startswith("./"):
-            # 真机形态：官方 update 后 clone 无 .git → 改比 marketplace 远端 HEAD
-            #（账本 gitCommitSha 记录的正是安装时的 repo HEAD，见 0620a687 同值现象）
+            # 真机形态：官方 update 后 clone 无 .git → 用 GitHub API 查该插件路径的最后提交
+            #（账本 gitCommitSha 的语义=最后触碰该 path 的 commit，分组同值现象实证）
             slug = marketplace_slug(ctx, a.plan["marketplace"])
-            head = gh_head(slug) if slug else None
-            if head:
-                a.expected = head
-                a.source = f"marketplace 远端 HEAD {slug}"
-                a.notes += " | 本地无 .git，改用远端 HEAD 对比"
+            if slug:
+                b = fetch_url(f"https://api.github.com/repos/{slug}/commits"
+                              f"?path={entry['source'][2:]}&per_page=1")
+                try:
+                    js = json.loads(b)[0]["sha"] if b else None
+                except Exception:
+                    js = None
+                if js:
+                    a.expected = js
+                    a.source = f"marketplace 远端 path 提交 {slug}"
+                    a.notes += " | 本地无 .git，改用远端 path 提交对比"
         ip = Path(a.plan["installPath"]) if a.plan.get("installPath") else None
         if ip and (ip / "package.json").exists():            # 辅助检测：npm 发布通道（需身份校验）
             pkg = json.loads((ip / "package.json").read_text()).get("name")

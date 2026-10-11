@@ -220,14 +220,13 @@ class TestPathWithoutDotGit(unittest.TestCase):
         shutil.rmtree(self.ctx.marketplaces / fixture.MARKET / ".git")
         self.addCleanup(self._td.cleanup)
 
-    def test_falls_back_to_remote_head(self):
-        fixture.patch_fetch(self, {"test-org/claude-plugins-official/commits/HEAD":
-                                   {"sha": "9" * 40}})
+    def test_falls_back_to_remote_path_commit(self):
+        fixture.patch_fetch(self, {"commits?path=plugins/aa": [{"sha": "9" * 40}]})
         assets = cpm.load_assets(self.ctx)
         cpm.check_plugins(self.ctx, assets)
         by = {a.name: a for a in assets}
-        self.assertEqual(by["frontend-design" if False else "aa"].expected, "9" * 40)
-        self.assertIn("远端 HEAD", by["aa"].notes)
+        self.assertEqual(by["aa"].expected, "9" * 40)
+        self.assertIn("远端 path 提交", by["aa"].notes)
 
 class TestEffectiveComparison(unittest.TestCase):
     """对比对象须是账本 gitCommitSha 而非展示 version（superpowers 假阳性修正）。"""
