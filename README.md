@@ -27,7 +27,9 @@
 - **skill**：来源自动发现（`.git` remote → README GitHub URL → `cpm.json` 补录）。
   有 `.git` 的 `pull --ff-only`；release 安装的走 zip 下载 + SHA256SUMS 校验 +
   换装时保留 `.gitignore` 所列本地文件（如 runtime.conf / .env）。
-- **MCP（npm 全局装法）**：检测=`npm view`；执行**只打印** `sudo npm i -g <pkg>@<ver>`，
+- **MCP（npm 全局装法）**：检测=`npm view`；执行**只打印**
+  `sudo npm i -g --allow-scripts=<pkg> <pkg>@<ver>`（npm 新策略默认跳装 install 脚本，
+  真机教训：context-mode 的 postinstall/自愈例程被跳、better-sqlite3 原生构建靠缓存侥幸可用），
   cpm 自身永不使用特权。项目级 MCP 与插件重叠配置不处理，仅标注。
 
 ## 网络与代理（本机环境）

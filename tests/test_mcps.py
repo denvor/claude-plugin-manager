@@ -24,7 +24,9 @@ class TestMcps(unittest.TestCase):
         self.assertEqual(set(by), {"codegraph", "context-mode", "playwright@/home/x/proj"})
         self.assertEqual(by["codegraph"].source, "npm:@colbymchenry/codegraph")  # bin→包名反查
         self.assertEqual(by["codegraph"].current, "0.9.9")
-        self.assertIn("sudo npm i -g @colbymchenry/codegraph@", by["codegraph"].plan["cmd"])
+        self.assertIn("--allow-scripts=@colbymchenry/codegraph", by["codegraph"].plan["cmd"])
+        self.assertIn("sudo npm i -g --allow-scripts=@colbymchenry/codegraph @colbymchenry/codegraph@",
+                      by["codegraph"].plan["cmd"])
         self.assertEqual(by["context-mode"].current, "1.0.162")
         self.assertFalse(by["playwright@/home/x/proj"].managed)
         self.assertIn("与官方插件重叠", by["playwright@/home/x/proj"].notes)
@@ -44,7 +46,8 @@ class TestMcps(unittest.TestCase):
         by = {a.name: a for a in assets}
         self.assertEqual(by["codegraph"].expected, "0.10.0")
         self.assertTrue(cpm.outdated("0.9.9", by["codegraph"].expected))
-        self.assertEqual(by["codegraph"].plan["cmd"], "sudo npm i -g @colbymchenry/codegraph@0.10.0")
+        self.assertEqual(by["codegraph"].plan["cmd"],
+                         "sudo npm i -g --allow-scripts=@colbymchenry/codegraph @colbymchenry/codegraph@0.10.0")
         self.assertEqual(by["context-mode"].expected, "0.10.0")   # 只断言 expected 已填
 
     def test_npm_view_failure_leaves_question(self):

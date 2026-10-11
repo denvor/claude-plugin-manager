@@ -213,7 +213,7 @@ def load_mcps(ctx):
             res.append(Asset(kind="mcp", name=name, current=ver,
                              source=f"npm:{pkg}",
                              plan={"type": "print", "pkg": pkg,
-                                   "cmd": f"sudo npm i -g {pkg}@<latest>"}))
+                                   "cmd": f"sudo npm i -g --allow-scripts={pkg} {pkg}@<latest>"}))
         else:
             res.append(Asset(kind="mcp", name=name,
                              current=srv.get("type", "stdio"),
@@ -454,7 +454,7 @@ def check_mcps(ctx, assets):
             rc, out, _ = run_cmd(["npm", "view", a.plan["pkg"], "version"])
             if rc == 0 and out.strip():
                 a.expected = out.strip()
-                a.plan["cmd"] = f"sudo npm i -g {a.plan['pkg']}@{out.strip()}"
+                a.plan["cmd"] = f"sudo npm i -g --allow-scripts={a.plan['pkg']} {a.plan['pkg']}@{out.strip()}"
 
 
 def cmd_check_update(ctx, as_json=False):
