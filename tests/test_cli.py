@@ -144,3 +144,22 @@ class TestAddWarning(unittest.TestCase):
             rc = cpm.main(["add", "nosuchdir", "https://github.com/foo/x"], ctx=ctx)
         self.assertEqual(rc, cpm.EXIT_OK)      # 记录仍成功（安装后即可生效）
         self.assertIn("目录不存在", err.getvalue())
+
+
+class TestUpdateProgress(unittest.TestCase):
+    """update 不得沉默：刷新状态/逐资产进度/耗时须出现在 stderr（stdout 保持结果本体）。"""
+
+    def test_update_emits_progress_to_stderr(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        ctx = fixture.test_ctx(fixture.build_home(Path(td.name)))
+        fixture.patch_run(self, {("claude",): lambda a, c: (0, "", ""),
+                                 ("npm",): lambda a, c: (0, "9.9.9", "")})
+        fixture.patch_fetch(self, {"releases/latest": {"tag_name": "v9.9.9"}})
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            cpm.main(["update", "aa", "--dry-run"], ctx=ctx)
+        text = err.getvalue()
+        self.assertIn("marketplace 刷新", text)
+        self.assertIn("正在更新 plugin aa", text)
+        self.assertIn("用时", text)

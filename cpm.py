@@ -579,14 +579,22 @@ def cmd_update(ctx, names, all_, dry_run):
     if not names and not all_:
         print("cpm update: 请给出资产名或使用 --all", file=sys.stderr)
         return EXIT_BROKEN
+    # 进度走 stderr，stdout 只留逐项结果与汇总（同 check-update 的约定）
+    t0 = time.time()
+    say = lambda m: print(m, file=sys.stderr, flush=True)
     assets = load_assets(ctx)
-    run_cmd(["claude", "plugin", "marketplace", "update"], timeout=REFRESH_TIMEOUT)
-    # 刷新失败不致命：更新委托官方命令，由其自行报错
+    say("cpm: 刷新 marketplace（网络 git，GitHub 慢时可能要几分钟）…")
+    rc, _, err = run_cmd(["claude", "plugin", "marketplace", "update"], timeout=REFRESH_TIMEOUT)
+    say(f"cpm: marketplace 刷新 {'成功' if rc == 0 else '失败'}（{time.time() - t0:.1f}s）")
+    if rc != 0:
+        say(f"cpm: 刷新失败不致命，后续更新委托官方命令自行报错: {err.strip()}")
+    say("cpm: 检查更新（本地比对 + 联网）…")
     check_plugins(ctx, assets)
     check_skills(ctx, assets)
     check_mcps(ctx, assets)
     if all_:
         targets = [a for a in assets if is_outdated(a)]
+        say(f"cpm: 待更新 {len(targets)} 项")
     else:
         want = set(names)
         targets = [a for a in assets if a.name in want or (a.plan or {}).get("id") in want]
@@ -594,10 +602,12 @@ def cmd_update(ctx, names, all_, dry_run):
             print(f"  未找到资产: {m}", file=sys.stderr)
     ok, failed = 0, 0
     for a in targets:
+        say(f"cpm: 正在更新 {a.kind} {a.name}…")
         good, msg = update_asset(ctx, a, dry_run)
         print(f"{a.kind}  {a.name}: {'✓' if good else '✗'} {msg}")
         ok, failed = ok + (1 if good else 0), failed + (0 if good else 1)
     print(f"汇总: 成功 {ok} / 失败 {failed}" + ("（dry-run）" if dry_run else ""))
+    say(f"cpm: 完成，用时 {time.time() - t0:.1f}s")
     return EXIT_OK if failed == 0 else EXIT_PARTIAL
 
 
