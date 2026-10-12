@@ -28,8 +28,10 @@
   有 `.git` 的 `pull --ff-only`；release 安装的走 zip 下载 + SHA256SUMS 校验 +
   换装时保留 `.gitignore` 所列本地文件（如 runtime.conf / .env）。
 - **MCP（npm 全局装法）**：检测=`npm view`；执行**只打印**
-  `sudo npm i -g --allow-scripts=<pkg> <pkg>@<ver>`（npm 新策略默认跳装 install 脚本，
-  真机教训：context-mode 的 postinstall/自愈例程被跳、better-sqlite3 原生构建靠缓存侥幸可用），
+  `npm i -g [--allow-scripts=<pkg>] <pkg>@<ver>`（Linux/macOS 自动前缀 `sudo`，Windows 无 sudo；
+  `--allow-scripts` 仅在探测到当前 npm 支持该配置项时才加——npm v12 系默认跳过 install scripts
+  必须显式放行（真机教训：context-mode 的 postinstall/自愈例程被跳、better-sqlite3 原生构建靠缓存
+  侥幸可用），而旧 npm（真机 11.12.1）不识别该 flag，硬带会报 Unknown cli config 警告），
   cpm 自身永不使用特权。项目级 MCP 与插件重叠配置不处理，仅标注。
 
 ## 网络与代理（本机环境）
@@ -46,7 +48,7 @@
 | check-update：marketplace 刷新 | 官方 CLI → git → github.com | 刷新超时→降级告警，比对照常（结果可能偏旧） |
 | update：plugin | 官方 CLI → git | **失败**，需代理存活 |
 | update：skill zip 换装 | codeload.github.com（urllib） | **失败**——urllib 不读 gitconfig，须显式带环境变量：`https_proxy=http://127.0.0.1:20171 cpm update --all` |
-| update：mcp | 仅打印 sudo 命令 | 执行时 npm 直连可达 |
+| update：mcp | 仅打印安装命令 | 执行时 npm 直连可达 |
 
 ## 开发
 

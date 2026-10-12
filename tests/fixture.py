@@ -1,5 +1,8 @@
 import hashlib
 import json
+import os
+import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -7,7 +10,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import cpm
 
+# --allow-scripts 探针默认置 False（旧 npm 形态）：测试不触真机 npm；
+# 需要 v12 形态的用例显式设 True。
+cpm._allow_scripts_probe = False
+
 MARKET = "claude-plugins-official"
+
+
+def rm_rf(path):
+    """跨平台强删：git 对象在 Windows 是只读文件，须先解除只读再删。"""
+    def _onerr(func, p, exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_onerr)
+    else:
+        shutil.rmtree(path, onerror=lambda func, p, ei: _onerr(func, p, None))
 
 
 def sh(argv, cwd):

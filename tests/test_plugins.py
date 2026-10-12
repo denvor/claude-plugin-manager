@@ -216,8 +216,7 @@ class TestPathWithoutDotGit(unittest.TestCase):
         self._td = tempfile.TemporaryDirectory()
         self.home = fixture.build_home(Path(self._td.name))
         self.ctx = fixture.test_ctx(self.home)
-        import shutil
-        shutil.rmtree(self.ctx.marketplaces / fixture.MARKET / ".git")
+        fixture.rm_rf(self.ctx.marketplaces / fixture.MARKET / ".git")
         self.addCleanup(self._td.cleanup)
 
     def test_falls_back_to_remote_path_commit(self):
@@ -253,8 +252,7 @@ class TestCloneVersionFirst(unittest.TestCase):
         self._td = tempfile.TemporaryDirectory()
         self.home = fixture.build_home(Path(self._td.name))
         self.ctx = fixture.test_ctx(self.home)
-        import shutil
-        shutil.rmtree(self.ctx.marketplaces / fixture.MARKET / ".git")
+        fixture.rm_rf(self.ctx.marketplaces / fixture.MARKET / ".git")
         pj = self.ctx.marketplaces / fixture.MARKET / "plugins/aa/.claude-plugin"
         pj.mkdir(parents=True)
         (pj / "plugin.json").write_text(json.dumps({"name": "aa", "version": "3.2.1"}))

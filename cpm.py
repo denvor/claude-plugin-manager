@@ -7,8 +7,10 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -20,6 +22,13 @@ from pathlib import Path
 
 EXIT_OK, EXIT_OUTDATED, EXIT_PARTIAL, EXIT_BROKEN = 0, 1, 2, 3
 REFRESH_TIMEOUT = 300  # marketplace 刷新含网络 git（真机实测可超 60s），单独放宽
+
+if sys.platform == "win32":
+    # Windows 重定向（管道/文件）时 stdout/stderr 默认按 GBK：✓ 等符号直接抛
+    # UnicodeEncodeError，--json 中文输出也不是 UTF-8。真终端走 ConsoleIO 不受影响。
+    for _s in (sys.stdout, sys.stderr):
+        if hasattr(_s, "reconfigure"):
+            _s.reconfigure(encoding="utf-8")
 
 
 class Broken(Exception):
@@ -37,11 +46,72 @@ def fetch_url(url, timeout=15):
 
 
 def run_cmd(argv, cwd=None, timeout=60):
+    # Windows 上 npm/claude 是 .cmd shim，CreateProcess 不搜裸名（仅 .exe），
+    # 须经 shutil.which 解析出真实路径；Linux 下 which 命中同一目标，行为不变。
+    argv = list(argv)
+    disp = " ".join(map(str, argv))
+    resolved = shutil.which(str(argv[0]))
+    if resolved:
+        argv[0] = resolved
     try:
-        p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
-        return 124, "", f"子进程超时({timeout}s): {' '.join(map(str, argv))}"
+        return 124, "", f"子进程超时({timeout}s): {disp}"
     return p.returncode, p.stdout, p.stderr
+
+
+_allow_scripts_probe: bool | None = None
+
+
+def npm_has_allow_scripts():
+    """能力探测（一次缓存）：npm v12 系默认跳过 install scripts，须 --allow-scripts 放行；
+    旧 npm（真机 11.12.1）不识别该 flag，硬带会报 Unknown cli config 警告。
+    依据：npm config ls -l 是否有 allow-scripts 配置项。npm 缺失/失败按 False。"""
+    global _allow_scripts_probe
+    if _allow_scripts_probe is None:
+        rc, out, _ = run_cmd(["npm", "config", "ls", "-l"])
+        _allow_scripts_probe = rc == 0 and bool(
+            re.search(r"^allow-scripts\s*=", out or "", re.M))
+    return _allow_scripts_probe
+
+
+def npm_global_install_cmd(pkg, spec=None):
+    """给用户打印的全局更新命令：sudo 仅 Linux/macOS 有意义，Windows 无 sudo；
+    --allow-scripts 仅新 npm 支持时才加（见 npm_has_allow_scripts）。"""
+    prefix = "" if os.name == "nt" else "sudo "
+    flag = f"--allow-scripts={pkg} " if npm_has_allow_scripts() else ""
+    target = f"{pkg}@{spec}" if spec else f"{pkg}@<latest>"
+    return f"{prefix}npm i -g {flag}{target}"
+
+
+def _rmtree_force(path):
+    """跨平台强删：git 对象在 Windows 是只读文件，须先解除只读再重试。
+    （换装备份目录可能含 .git；静默跳过会在 skills/ 留下垃圾目录）"""
+    def _onerr(func, p, exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_onerr)
+    else:
+        shutil.rmtree(path, onerror=lambda func, p, ei: _onerr(func, p, None))
+
+
+def default_node_modules():
+    """全局 npm 树默认位置：平台候选优先，都落空再问 `npm root -g`
+    （nvm/自定义 prefix 等非常规装法），仍失败返回首个候选（find_npm_pkg 容忍缺失）。"""
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        cands = [Path(appdata) / "npm" / "node_modules"] if appdata else []
+    else:
+        cands = [Path("/usr/lib/node_modules"), Path("/usr/local/lib/node_modules")]
+    for c in cands:
+        if c.is_dir():
+            return c
+    rc, out, _ = run_cmd(["npm", "root", "-g"])
+    if rc == 0 and out.strip() and Path(out.strip()).is_dir():
+        return Path(out.strip())
+    return cands[0] if cands else Path("/usr/lib/node_modules")
 
 
 def load_json(path):
@@ -49,7 +119,7 @@ def load_json(path):
     if not path.exists():
         raise Broken(f"状态文件缺失: {path}")
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise Broken(f"状态文件 JSON 损坏: {path}: {e}")
 
@@ -81,7 +151,7 @@ class Ctx:
         self.settings = self.claude / "settings.json"
         self.skills = self.claude / "skills"
         self.claude_json = self.home / ".claude.json"
-        self.node_modules = Path(node_modules or "/usr/lib/node_modules")
+        self.node_modules = Path(node_modules) if node_modules else default_node_modules()
         self.cpm_json = Path(cpm_json or Path(__file__).resolve().parent / "cpm.json")
 
 
@@ -127,7 +197,7 @@ def discover_skill_source(d, override):
         return None, f"cpm.json 里的 source 不是 GitHub URL: {override['source']}"
     cfg = d / ".git/config"
     if cfg.exists():
-        m = GH_REPO.search(cfg.read_text(errors="ignore"))
+        m = GH_REPO.search(cfg.read_text(encoding="utf-8", errors="ignore"))
         if m:
             return f"{m.group(1)}/{m.group(2).removesuffix('.git')}", ".git/config"
     repos = set()
@@ -135,7 +205,7 @@ def discover_skill_source(d, override):
         p = d / fn
         if not p.exists():
             continue
-        for line in p.read_text(errors="ignore").splitlines():
+        for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
             if re.search(r"install|download|release|clone", line, re.I):
                 for m in GH_REPO.finditer(line):
                     repos.add(f"{m.group(1)}/{m.group(2).removesuffix('.git')}")
@@ -149,7 +219,7 @@ def discover_skill_source(d, override):
 def skill_version(d):
     sk = d / "SKILL.md"
     if sk.exists():
-        m = re.search(r"^version:\s*([\w.\-]+)", sk.read_text(errors="ignore")[:4000], re.M)
+        m = re.search(r"^version:\s*([\w.\-]+)", sk.read_text(encoding="utf-8", errors="ignore")[:4000], re.M)
         if m:
             return m.group(1)
     rc, out, _ = run_cmd(["git", "-C", str(d), "rev-parse", "--short", "HEAD"])
@@ -189,7 +259,7 @@ def find_npm_pkg(nm, cmd):
         if not pj.exists():
             continue
         try:
-            d = json.loads(pj.read_text())
+            d = json.loads(pj.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
         bins = d.get("bin")
@@ -209,11 +279,11 @@ def load_mcps(ctx):
         cmd = srv.get("command", "")
         pkg, root = find_npm_pkg(ctx.node_modules, cmd)
         if pkg:
-            ver = json.loads((root / "package.json").read_text()).get("version", "?")
+            ver = json.loads((root / "package.json").read_text(encoding="utf-8")).get("version", "?")
             res.append(Asset(kind="mcp", name=name, current=ver,
                              source=f"npm:{pkg}",
                              plan={"type": "print", "pkg": pkg,
-                                   "cmd": f"sudo npm i -g --allow-scripts={pkg} {pkg}@<latest>"}))
+                                   "cmd": npm_global_install_cmd(pkg)}))
         else:
             res.append(Asset(kind="mcp", name=name,
                              current=srv.get("type", "stdio"),
@@ -249,7 +319,7 @@ def plugin_expected(mp_dir, entry):
         pj = Path(mp_dir) / src[2:] / ".claude-plugin" / "plugin.json"
         if pj.exists():
             try:
-                ver = json.loads(pj.read_text()).get("version")
+                ver = json.loads(pj.read_text(encoding="utf-8")).get("version")
             except json.JSONDecodeError:
                 ver = None
             if ver:
@@ -378,7 +448,7 @@ def check_plugins(ctx, assets):
             ver = None
             if pj.exists():
                 try:
-                    ver = json.loads(pj.read_text()).get("version")
+                    ver = json.loads(pj.read_text(encoding="utf-8")).get("version")
                 except json.JSONDecodeError:
                     pass
             if ver:
@@ -400,7 +470,7 @@ def check_plugins(ctx, assets):
                         a.notes += " | 本地无 .git，改用远端 path 提交对比"
         ip = Path(a.plan["installPath"]) if a.plan.get("installPath") else None
         if ip and (ip / "package.json").exists():            # 辅助检测：npm 发布通道（需身份校验）
-            pkg = json.loads((ip / "package.json").read_text()).get("name")
+            pkg = json.loads((ip / "package.json").read_text(encoding="utf-8")).get("name")
             f = _npm_view_fields(pkg)
             npm_repo = f.get("repository.url")
             m = GH_REPO.search(npm_repo) if npm_repo else None
@@ -410,7 +480,7 @@ def check_plugins(ctx, assets):
                 a.notes += f" | npm 通道 {f['version']}"
         if ip and (ip / ".mcp.json").exists():               # npx 运行时插件自标注
             try:
-                d = json.loads((ip / ".mcp.json").read_text())
+                d = json.loads((ip / ".mcp.json").read_text(encoding="utf-8"))
                 if any(isinstance(s, dict) and s.get("command") == "npx" for s in d.values()):
                     a.notes += " | 运行时经 npx 自更新，无需管理"
             except json.JSONDecodeError:
@@ -468,7 +538,7 @@ def check_mcps(ctx, assets):
             rc, out, _ = run_cmd(["npm", "view", a.plan["pkg"], "version"])
             if rc == 0 and out.strip():
                 a.expected = out.strip()
-                a.plan["cmd"] = f"sudo npm i -g --allow-scripts={a.plan['pkg']} {a.plan['pkg']}@{out.strip()}"
+                a.plan["cmd"] = npm_global_install_cmd(a.plan["pkg"], out.strip())
 
 
 def cmd_check_update(ctx, as_json=False):
@@ -514,7 +584,9 @@ def update_skill_zip(a, dry_run, out=print):
     if blob is None:
         return False, f"下载失败: {url}"
     old = Path(a.dir)
-    with tempfile.TemporaryDirectory() as td:
+    # 解包目录与目标同盘（skills/ 下），否则跨盘 rename 在 Linux 抛 EXDEV、
+    # 在 Windows 直接失败（temp 在 C:、目标在 D: 很常见）。
+    with tempfile.TemporaryDirectory(dir=str(old.parent)) as td:
         zpath = Path(td) / "d.zip"
         zpath.write_bytes(blob)
         ex = Path(td) / "ex"
@@ -527,7 +599,7 @@ def update_skill_zip(a, dry_run, out=print):
         inner = next(iter(ex.iterdir()))          # 顶层 <repo>-<tag>/ 目录
         sums = inner / "SHA256SUMS.txt"
         if sums.exists():
-            for line in sums.read_text(errors="ignore").splitlines():
+            for line in sums.read_text(encoding="utf-8", errors="ignore").splitlines():
                 parts = line.split(None, 1)
                 if len(parts) != 2:
                     continue
@@ -539,7 +611,7 @@ def update_skill_zip(a, dry_run, out=print):
         keep = []
         gi = old / ".gitignore"
         if gi.exists():
-            keep = [ln.strip() for ln in gi.read_text(errors="ignore").splitlines()
+            keep = [ln.strip() for ln in gi.read_text(encoding="utf-8", errors="ignore").splitlines()
                     if ln.strip() and not ln.startswith("#") and not ln.startswith("!")]
         for rel in keep:
             src = old / rel
@@ -553,9 +625,20 @@ def update_skill_zip(a, dry_run, out=print):
         if gi.exists() and not (inner / ".gitignore").exists():
             shutil.copy2(gi, inner / ".gitignore")
         bak = old.with_name(old.name + "__cpm_bak")
-        old.rename(bak)
-        inner.rename(old)
-        shutil.rmtree(bak, ignore_errors=True)
+        # Windows 上现装目录可能被占用（编辑器/杀软句柄）：挪不开就原样退出
+        try:
+            old.rename(bak)
+        except OSError as e:
+            return False, f"现装目录挪开失败（Windows 常见为被占用）: {e}"
+        try:
+            inner.rename(old)
+        except OSError as e:
+            try:
+                bak.rename(old)  # 回滚，绝不让资产消失
+            except OSError:
+                return False, f"换装失败且回滚也失败，现场: {old} 备份在 {bak}: {e}"
+            return False, f"换装失败（原目录已回滚，保留备份）: {e}"
+        _rmtree_force(bak)
     return True, f"已换装 -> {ref}（保留本地文件 {len(keep)} 项）"
 
 
@@ -628,7 +711,8 @@ def cmd_update(ctx, names, all_, dry_run):
 def cmd_add(ctx, skill, url):
     data = load_json(ctx.cpm_json) if ctx.cpm_json.exists() else {"skills": {}}
     data.setdefault("skills", {})[skill] = {"source": url}
-    ctx.cpm_json.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    ctx.cpm_json.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8")
     print(f"✓ 已记录 {skill} 来源: {url}（{ctx.cpm_json}）")
     if not (ctx.skills / skill).exists():
         print(f"⚠ {ctx.skills / skill} 目录不存在：将在 skill 安装后生效", file=sys.stderr)
