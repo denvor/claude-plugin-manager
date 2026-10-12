@@ -1,13 +1,31 @@
 # cpm — Claude Code 资产管理 CLI
 
 盘点 / 检查更新 / 执行更新 Claude Code 的 plugin、skill、MCP 三类扩展资产。
-设计文档：`docs/superpowers/specs/2026-10-10-cpm-design.md`
+设计文档：`docs/superpowers/specs/2026-10-10-cpm-design.md`；变更历史：`CHANGELOG.md`
+
+要求：Python ≥ 3.10（用了 `str|None` 标注与 `removesuffix`）、`git`、`npm`、已配置 Claude Code。
+Windows / Linux 双平台可用（兼容要点见「平台注意」）。
 
 ## 安装
 
-    ln -s "$HOME/work/claude/plugin_manager/cpm.py" ~/.local/bin/cpm
+cpm 是单文件脚本，安装=把它放上 PATH；shim 指向仓库里的 `cpm.py`，所以以后 `git pull` 即生效，无需重装。
+部署目录 `~/.local/bin` 需已在 PATH 中（Windows 上必须是**注册表**里的那份，见下方警告）。
 
-要求：Python ≥ 3.10（用了 `str|None` 标注与 `removesuffix`）、`git`、`npm`、已配置 Claude Code。
+Linux / macOS（symlink）：
+
+    ln -s "$HOME/work/claude/claude-plugin-manager/cpm.py" ~/.local/bin/cpm
+
+Windows（在 Git Bash 里执行；把仓库路径换成你机器上的位置）——同一目录放两个 shim，
+`cpm.cmd` 给 cmd/PowerShell（PATHEXT 命中它），无扩展名的 `cpm` 给 Git Bash：
+
+    printf '@echo off\r\npython "D:\\work\\claude\\claude-plugin-manager\\cpm.py" %%*\r\nexit /b %%ERRORLEVEL%%\r\n' > ~/.local/bin/cpm.cmd
+    printf '#!/bin/sh\nexec python "D:/work/claude/claude-plugin-manager/cpm.py" "$@"\n' > ~/.local/bin/cpm
+    chmod +x ~/.local/bin/cpm
+
+> ⚠ **部署目录要在注册表 PATH（`HKCU\Environment\Path`）里，不能只在 shell 里 `echo %PATH%` 验证。**
+> Git Bash 会把自己的 `$HOME/bin` 注入到**它那个进程**的 PATH，即使该目录不在系统 PATH 中——
+> 在它内部一切正常，切到 PowerShell 就是 `CommandNotFoundException`（真机踩过）。
+> 查持久化的那份：`reg query HKCU\Environment /v Path`。
 
 ## 命令
 
@@ -45,8 +63,8 @@
   `skills/` 之外，不会被 Claude Code 当技能加载；同秒重名自动加 `-2` 后缀，绝不覆盖）。
   `cpm.json` 的来源补录**保留**，restore 后来源信息完整。
 - **MCP（npm 全局装法）**：从 `~/.claude.json` 删除 `mcpServers.<name>`，删除前把
-  完整条目存档到回收站；**只打印** `sudo npm rm -g <pkg>`（restore 同理只打印
-  `sudo npm i -g --allow-scripts=<pkg> <pkg>@<ver>`），cpm 永不执行特权命令。
+  完整条目存档到回收站；**只打印** `npm rm -g <pkg>`（restore 同理只打印重装命令，
+  命令形态与「各类别」一节的 sudo / `--allow-scripts` 规则一致），cpm 永不执行特权命令。
 - **restore**：skill 恢复 = 目录移回原位并清除回收标记；MCP 恢复 = 存档条目原样写回。
   目标已存在时**拒绝覆盖**（退出码 2，回收条目保留）。同名多条取最新。
 - 清空回收站无专门命令：`rm -rf ~/.claude/.cpm_trash`。
@@ -67,8 +85,18 @@
 | update：skill zip 换装 | codeload.github.com（urllib） | **失败**——urllib 不读 gitconfig，须显式带环境变量：`https_proxy=http://127.0.0.1:20171 cpm update --all` |
 | update：mcp | 仅打印安装命令 | 执行时 npm 直连可达 |
 
+## 平台注意（Windows）
+
+- **编码**：文件读写、子进程输出、被管道/重定向时的 stdout 全部显式 UTF-8（中文 Windows 默认 GBK，
+  `✓` 一类符号会直接抛 `UnicodeEncodeError`）。代价是在 PowerShell **内部再管道**
+  （`cpm status | findstr x`）时中文乱码——PowerShell 用控制台码页解码子进程字节流，不是 cpm 的缺陷；
+  先 `chcp 65001` 或 `[Console]::OutputEncoding=[Text.Encoding]::UTF8`。直接敲 `cpm status` 走 ConsoleIO，不受影响。
+- **`python3` 别用**：Windows 上它常是 Microsoft Store 的别名占位（报 "Python was not found"），一律用 `python`。
+- **全局 npm 目录**：默认按平台取 `%APPDATA%\npm\node_modules`（Windows）/ `/usr{,/local}/lib/node_modules`，
+  候选都不存在时用 `npm root -g` 兜底；仍不对可显式指定。
+
 ## 开发
 
-测试（全离线，注入网络层）：
+测试（全离线，注入网络层；Windows 用 `python`，见「平台注意」）：
 
     python3 -m unittest discover -s tests -t . -v

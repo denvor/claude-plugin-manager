@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -77,8 +78,9 @@ class TestUninstallMcp(unittest.TestCase):
         self.assertEqual(rec["server"], {"type": "stdio", "command": "codegraph",
                                          "args": ["serve", "--mcp"]})
         text = out.getvalue()
-        self.assertIn("sudo npm rm -g", text)                     # 只打印
-        self.assertIn("@colbymchenry/codegraph", text)
+        # sudo 按平台加（Windows 无 sudo），故断言跨平台公共部分，并单独锁这一轴
+        self.assertIn("npm rm -g @colbymchenry/codegraph", text)   # 只打印
+        self.assertEqual("sudo npm rm -g" in text, os.name != "nt")
         self.assertNotIn("password", json.dumps(rec))
 
 
@@ -187,8 +189,9 @@ class TestRestoreMcp(unittest.TestCase):
         self.assertEqual(cfg["mcpServers"]["codegraph"],
                          {"type": "stdio", "command": "codegraph", "args": ["serve", "--mcp"]})
         self.assertEqual(cpm.list_trash(ctx), [])
-        self.assertIn("sudo npm i -g", out.getvalue())      # npm 包本体只打印重装命令
-        self.assertIn("@colbymchenry/codegraph", out.getvalue())
+        # 只打印重装命令；sudo 前缀与 --allow-scripts 分别按平台/npm 能力，此处锁公共形态
+        self.assertIn("npm i -g @colbymchenry/codegraph@", out.getvalue())
+        self.assertEqual("sudo npm i -g" in out.getvalue(), os.name != "nt")
 
 
 class TestRestoreConflicts(unittest.TestCase):
