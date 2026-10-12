@@ -251,3 +251,57 @@ class TestUninstallTwice(unittest.TestCase):
         self.assertEqual(rc, cpm.EXIT_OK)
         self.assertIn("second content", (ctx.skills / "orphan" / "SKILL.md").read_text())
         self.assertEqual(len(cpm.list_trash(ctx)), 1)         # 只取最新一条出库
+
+
+class TestNpmCompat(unittest.TestCase):
+    """卸载/恢复打印的 npm 命令须走平台前缀 + 能力探测（对齐 Win/Linux 兼容提交）。"""
+
+    def setUp(self):
+        cpm._allow_scripts_probe = None      # 强制探测，不吃别的测试留下的缓存
+        self.addCleanup(setattr, cpm, "_allow_scripts_probe", None)
+
+    def _uninstall_codegraph(self, ctx):
+        calls = []
+
+        def npm(argv, cwd):
+            calls.append(list(argv))
+            if argv[1:3] == ["config", "ls"]:
+                return (0, "allow-scripts = true", "")
+            return (0, "", "")
+
+        fixture.patch_run(self, {("npm",): npm})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            cpm.main(["uninstall", "codegraph"], ctx=ctx)
+        return out.getvalue(), calls
+
+    def test_uninstall_rm_has_no_allow_scripts_and_platform_prefix(self):
+        ctx = make_ctx(self)
+        text, calls = self._uninstall_codegraph(ctx)
+        import os
+        # 卸载不跑 install 脚本，rm 命令不该带 --allow-scripts
+        self.assertIn("npm rm -g @colbymchenry/codegraph", text)
+        self.assertNotIn("--allow-scripts", text)
+        self.assertEqual("sudo" in text, os.name != "nt")
+        # 探测用了 npm config ls -l，不是硬编码
+        self.assertIn(["npm", "config", "ls", "-l"], calls)
+
+    def test_restore_install_cmd_follows_probe(self):
+        ctx = make_ctx(self)
+        self._uninstall_codegraph(ctx)
+        cpm._allow_scripts_probe = False     # 模拟旧 npm：重装命令不应带 flag
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = cpm.main(["restore", "codegraph"], ctx=ctx)
+        self.assertEqual(rc, cpm.EXIT_OK)
+        self.assertIn("npm i -g @colbymchenry/codegraph@0.9.9", out.getvalue())
+        self.assertNotIn("--allow-scripts", out.getvalue())
+
+    def test_rm_cmd_helper_platform_prefix(self):
+        """全局 patch os.name 会把 Path 换成 ntpath、弄坏夹具，
+        故对助手做主机自适应断言（与兼容提交的 install_cmd 测试同法）。"""
+        import os
+        cmd = cpm.npm_global_remove_cmd("some-pkg")
+        self.assertTrue(cmd.endswith("npm rm -g some-pkg".lstrip()) or
+                        cmd.endswith("rm -g some-pkg"))
+        self.assertEqual(cmd.startswith("sudo "), os.name != "nt")

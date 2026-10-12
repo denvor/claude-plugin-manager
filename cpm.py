@@ -85,6 +85,13 @@ def npm_global_install_cmd(pkg, spec=None):
     return f"{prefix}npm i -g {flag}{target}"
 
 
+def npm_global_remove_cmd(pkg):
+    """给用户打印的全局卸载命令：rm 不跑 install 脚本，无需 --allow-scripts；
+    sudo 前缀同 install（仅 Linux/macOS）。"""
+    prefix = "" if os.name == "nt" else "sudo "
+    return f"{prefix}npm rm -g {pkg}"
+
+
 def _rmtree_force(path):
     """跨平台强删：git 对象在 Windows 是只读文件，须先解除只读再重试。
     （换装备份目录可能含 .git；静默跳过会在 skills/ 留下垃圾目录）"""
@@ -740,24 +747,28 @@ def uninstall_asset(ctx, a, dry_run):
         dest = trash_new_path(ctx.cpm_trash, ts, a.name)
         ctx.cpm_trash.mkdir(parents=True, exist_ok=True)
         shutil.move(str(d), dest)
-        (dest / ".cpm_removed.json").write_text(json.dumps(
-            {"kind": "skill", "name": a.name, "removed": ts}, ensure_ascii=False))
+        (dest / ".cpm_removed.json").write_text(
+            json.dumps({"kind": "skill", "name": a.name, "removed": ts}, ensure_ascii=False),
+            encoding="utf-8")
         return True, f"已移入回收站 {dest.name}"
     if a.kind == "mcp":
         if p.get("type") != "print" or not p.get("pkg"):
             return False, "非全局 npm 装法，cpm 不处理"
         if dry_run:
-            return True, f"将移除 mcpServers.{a.name} 并存档；将执行: sudo npm rm -g {p['pkg']}"
+            return True, (f"将移除 mcpServers.{a.name} 并存档；"
+                          f"将执行: {npm_global_remove_cmd(p['pkg'])}")
         cfg = load_json(ctx.claude_json)
         srv = cfg.get("mcpServers", {}).pop(a.name)
         ts = time.strftime("%Y%m%d-%H%M%S")
         ctx.cpm_trash.mkdir(parents=True, exist_ok=True)
         path = trash_new_path(ctx.cpm_trash, ts, a.name + ".json")
-        path.write_text(json.dumps(
-            {"kind": "mcp", "name": a.name, "removed": ts, "pkg": p["pkg"],
-             "version": a.current, "server": srv}, ensure_ascii=False, indent=2))
-        ctx.claude_json.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
-        return True, f"已移除配置并存档 {path.name}；手动执行 -> sudo npm rm -g {p['pkg']}"
+        path.write_text(
+            json.dumps({"kind": "mcp", "name": a.name, "removed": ts, "pkg": p["pkg"],
+                        "version": a.current, "server": srv}, ensure_ascii=False, indent=2),
+            encoding="utf-8")
+        ctx.claude_json.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n",
+                                   encoding="utf-8")
+        return True, f"已移除配置并存档 {path.name}；手动执行 -> {npm_global_remove_cmd(p['pkg'])}"
     return False, "该类别暂不支持"
 
 
@@ -776,7 +787,7 @@ def list_trash(ctx):
         if marker is None:
             continue
         try:
-            d = json.loads(marker.read_text())
+            d = json.loads(marker.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
         if d.get("kind") in ("skill", "mcp"):
@@ -819,13 +830,15 @@ def cmd_restore(ctx, name):
             print(f"目标已存在，不覆盖: mcpServers.{name}（回收条目保留）", file=sys.stderr)
             return EXIT_PARTIAL
         cfg.setdefault("mcpServers", {})[name] = e["server"]
-        ctx.claude_json.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
+        ctx.claude_json.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n",
+                                   encoding="utf-8")
         p.unlink()
         msg = f"✓ MCP 配置已恢复: {name}"
         if e.get("pkg"):
-            ver = f"@{e['version']}" if e.get("version") else ""
-            msg += (f"；npm 包未恢复，手动执行 -> "
-                    f"sudo npm i -g --allow-scripts={e['pkg']} {e['pkg']}{ver}")
+            ver = e.get("version") or None
+            if ver == "?":
+                ver = None
+            msg += f"；npm 包未恢复，手动执行 -> {npm_global_install_cmd(e['pkg'], ver)}"
         print(msg)
         return EXIT_OK
 
