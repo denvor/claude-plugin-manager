@@ -16,6 +16,9 @@
 | `cpm status` | 盘点三类资产（版本/来源/启用/可管理性） | 否 |
 | `cpm check-update [--json]` | 刷新 marketplace 并比对可更新项 | 是 |
 | `cpm update <name>…` / `cpm update --all [--dry-run]` | 执行更新 | 视类别 |
+| `cpm uninstall <name>… [--dry-run]` | 卸载资产（skill/MCP 入回收站，plugin 委托官方） | 否 |
+| `cpm trash` | 列出回收站条目 | 否 |
+| `cpm restore <name>` | 从回收站恢复 skill 目录 / MCP 配置 | 否 |
 | `cpm add <skill> <url>` | 补录无法自动发现的 skill 来源 | 否 |
 
 退出码：0 无事项；1 有可更新项；2 有失败/检测不到；3 状态文件异常。
@@ -33,6 +36,20 @@
   必须显式放行（真机教训：context-mode 的 postinstall/自愈例程被跳、better-sqlite3 原生构建靠缓存
   侥幸可用），而旧 npm（真机 11.12.1）不识别该 flag，硬带会报 Unknown cli config 警告），
   cpm 自身永不使用特权。项目级 MCP 与插件重叠配置不处理，仅标注。
+
+## 卸载与回收站（uninstall / trash / restore）
+
+- **plugin**：委托官方 `claude plugin uninstall <id>`。官方自删缓存与数据目录、
+  **不留备份**，`cpm restore` 无法恢复——重装用 `claude plugin install <id>`。
+- **skill**：整个目录移入 `~/.claude/.cpm_trash/<时间戳>-<name>/`（回收目录在
+  `skills/` 之外，不会被 Claude Code 当技能加载；同秒重名自动加 `-2` 后缀，绝不覆盖）。
+  `cpm.json` 的来源补录**保留**，restore 后来源信息完整。
+- **MCP（npm 全局装法）**：从 `~/.claude.json` 删除 `mcpServers.<name>`，删除前把
+  完整条目存档到回收站；**只打印** `sudo npm rm -g <pkg>`（restore 同理只打印
+  `sudo npm i -g --allow-scripts=<pkg> <pkg>@<ver>`），cpm 永不执行特权命令。
+- **restore**：skill 恢复 = 目录移回原位并清除回收标记；MCP 恢复 = 存档条目原样写回。
+  目标已存在时**拒绝覆盖**（退出码 2，回收条目保留）。同名多条取最新。
+- 清空回收站无专门命令：`rm -rf ~/.claude/.cpm_trash`。
 
 ## 网络与代理（本机环境）
 

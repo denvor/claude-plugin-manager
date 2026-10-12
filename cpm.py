@@ -150,6 +150,7 @@ class Ctx:
         self.marketplaces = self.claude / "plugins/marketplaces"
         self.settings = self.claude / "settings.json"
         self.skills = self.claude / "skills"
+        self.cpm_trash = self.claude / ".cpm_trash"
         self.claude_json = self.home / ".claude.json"
         self.node_modules = Path(node_modules) if node_modules else default_node_modules()
         self.cpm_json = Path(cpm_json or Path(__file__).resolve().parent / "cpm.json")
@@ -708,6 +709,142 @@ def cmd_update(ctx, names, all_, dry_run):
     return EXIT_OK if failed == 0 else EXIT_PARTIAL
 
 
+def match_asset(a, want):
+    """名称匹配规则（update/uninstall 共用）：资产名或 plugin@marketplace id 皆可。"""
+    return a.name in want or (a.plan or {}).get("id") in want
+
+
+def trash_new_path(base, ts, name):
+    """回收条目路径 <ts>-<name>；同秒重名追加 -2/-3…，绝不覆盖既有回收内容。"""
+    p = base / f"{ts}-{name}"
+    i = 2
+    while p.exists():
+        p = base / f"{ts}-{name}-{i}"
+        i += 1
+    return p
+
+
+def uninstall_asset(ctx, a, dry_run):
+    p = a.plan or {}
+    if a.kind == "plugin":
+        argv = ["claude", "plugin", "uninstall", p["id"]]
+        if dry_run:
+            return True, f"将执行: {' '.join(argv)}"
+        rc, _, err = run_cmd(argv)
+        return rc == 0, err.strip() or "已委托 claude plugin uninstall"
+    if a.kind == "skill":
+        d = Path(a.dir)
+        if dry_run:
+            return True, f"将移入回收站: {d}"
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        dest = trash_new_path(ctx.cpm_trash, ts, a.name)
+        ctx.cpm_trash.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(d), dest)
+        (dest / ".cpm_removed.json").write_text(json.dumps(
+            {"kind": "skill", "name": a.name, "removed": ts}, ensure_ascii=False))
+        return True, f"已移入回收站 {dest.name}"
+    if a.kind == "mcp":
+        if p.get("type") != "print" or not p.get("pkg"):
+            return False, "非全局 npm 装法，cpm 不处理"
+        if dry_run:
+            return True, f"将移除 mcpServers.{a.name} 并存档；将执行: sudo npm rm -g {p['pkg']}"
+        cfg = load_json(ctx.claude_json)
+        srv = cfg.get("mcpServers", {}).pop(a.name)
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        ctx.cpm_trash.mkdir(parents=True, exist_ok=True)
+        path = trash_new_path(ctx.cpm_trash, ts, a.name + ".json")
+        path.write_text(json.dumps(
+            {"kind": "mcp", "name": a.name, "removed": ts, "pkg": p["pkg"],
+             "version": a.current, "server": srv}, ensure_ascii=False, indent=2))
+        ctx.claude_json.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
+        return True, f"已移除配置并存档 {path.name}；手动执行 -> sudo npm rm -g {p['pkg']}"
+    return False, "该类别暂不支持"
+
+
+def list_trash(ctx):
+    """扫描回收站 → [{kind, name, removed, path}]。
+    skill 条目 = 目录 + 内嵌 .cpm_removed.json 标记；mcp 条目 = JSON 存档文件。"""
+    res = []
+    if not ctx.cpm_trash.exists():
+        return res
+    for p in sorted(ctx.cpm_trash.iterdir()):
+        marker = None
+        if p.is_file() and p.suffix == ".json":
+            marker = p
+        elif p.is_dir() and (p / ".cpm_removed.json").exists():
+            marker = p / ".cpm_removed.json"
+        if marker is None:
+            continue
+        try:
+            d = json.loads(marker.read_text())
+        except json.JSONDecodeError:
+            continue
+        if d.get("kind") in ("skill", "mcp"):
+            res.append({**d, "path": str(p)})
+    return res
+
+
+def cmd_trash(ctx):
+    entries = list_trash(ctx)
+    if not entries:
+        print("回收站为空（cpm uninstall 的 skill/MCP 存档会出现在这里）")
+        return EXIT_OK
+    for e in entries:
+        print(f"{e['kind']:<6} {e['name']:<24} 卸载于 {e['removed']}")
+    print(f"共 {len(entries)} 条；恢复用 cpm restore <name>")
+    return EXIT_OK
+
+
+def cmd_restore(ctx, name):
+    entries = [e for e in list_trash(ctx) if e["name"] == name]
+    if not entries:
+        print(f"未找到回收记录: {name}（plugin 系官方卸载、无备份，重装用 claude plugin install）",
+              file=sys.stderr)
+        return EXIT_PARTIAL
+    e = entries[-1]      # 同名多条取最新（条目路径带时间戳前缀，排序即时间序）
+    p = Path(e["path"])
+    if e["kind"] == "skill":
+        dest = ctx.skills / name
+        if dest.exists():
+            print(f"目标已存在，不覆盖: {dest}（回收条目保留在 {p}）", file=sys.stderr)
+            return EXIT_PARTIAL
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(p), dest)
+        (dest / ".cpm_removed.json").unlink(missing_ok=True)
+        print(f"✓ skill 已恢复: {dest}")
+        return EXIT_OK
+    if e["kind"] == "mcp":
+        cfg = load_json(ctx.claude_json)
+        if name in cfg.get("mcpServers", {}):
+            print(f"目标已存在，不覆盖: mcpServers.{name}（回收条目保留）", file=sys.stderr)
+            return EXIT_PARTIAL
+        cfg.setdefault("mcpServers", {})[name] = e["server"]
+        ctx.claude_json.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
+        p.unlink()
+        msg = f"✓ MCP 配置已恢复: {name}"
+        if e.get("pkg"):
+            ver = f"@{e['version']}" if e.get("version") else ""
+            msg += (f"；npm 包未恢复，手动执行 -> "
+                    f"sudo npm i -g --allow-scripts={e['pkg']} {e['pkg']}{ver}")
+        print(msg)
+        return EXIT_OK
+
+
+def cmd_uninstall(ctx, names, dry_run):
+    assets = load_assets(ctx)
+    want = set(names)
+    targets = [a for a in assets if match_asset(a, want)]
+    for m in sorted(want - {a.name for a in targets}):
+        print(f"  未找到资产: {m}", file=sys.stderr)
+    ok, failed = 0, 0
+    for a in targets:
+        good, msg = uninstall_asset(ctx, a, dry_run)
+        print(f"{a.kind}  {a.name}: {'✓' if good else '✗'} {msg}")
+        ok, failed = ok + (1 if good else 0), failed + (0 if good else 1)
+    print(f"汇总: 成功 {ok} / 失败 {failed}" + ("（dry-run）" if dry_run else ""))
+    return EXIT_OK if failed == 0 else EXIT_PARTIAL
+
+
 def cmd_add(ctx, skill, url):
     data = load_json(ctx.cpm_json) if ctx.cpm_json.exists() else {"skills": {}}
     data.setdefault("skills", {})[skill] = {"source": url}
@@ -729,6 +866,12 @@ def main(argv=None, ctx=None):
     p.add_argument("names", nargs="*", help="资产名（与 --all 二选一）")
     p.add_argument("--all", action="store_true", help="更新全部可更新项")
     p.add_argument("--dry-run", action="store_true", help="只显示将做什么")
+    p = sub.add_parser("uninstall", help="卸载资产（skill 入回收站；MCP 存档配置；plugin 委托官方）")
+    p.add_argument("names", nargs="+", help="资产名或 plugin@marketplace id")
+    p.add_argument("--dry-run", action="store_true", help="只显示将做什么")
+    p = sub.add_parser("trash", help="列出回收站（uninstall 存档的 skill/MCP）")
+    p = sub.add_parser("restore", help="从回收站恢复 skill / MCP 配置")
+    p.add_argument("name")
     p = sub.add_parser("add", help="补录 skill 来源到 cpm.json")
     p.add_argument("skill")
     p.add_argument("url")
@@ -741,6 +884,12 @@ def main(argv=None, ctx=None):
             return cmd_check_update(ctx, args.json)
         if args.cmd == "update":
             return cmd_update(ctx, args.names, args.all, args.dry_run)
+        if args.cmd == "uninstall":
+            return cmd_uninstall(ctx, args.names, args.dry_run)
+        if args.cmd == "trash":
+            return cmd_trash(ctx)
+        if args.cmd == "restore":
+            return cmd_restore(ctx, args.name)
         if args.cmd == "add":
             return cmd_add(ctx, args.skill, args.url)
     except Broken as e:
