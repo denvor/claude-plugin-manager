@@ -280,11 +280,31 @@ def find_npm_pkg(nm, cmd):
     return None, None
 
 
+def plugin_mcp_names(ctx):
+    """官方插件在其 cache 的 .mcp.json 里声明的 server 名（真机形态是裸 map，无 mcpServers 包裹，
+    如 playwright 插件声明 "playwright"）。用于判定项目级条目是否真的与插件重叠。"""
+    if not ctx.plugins_json.exists():
+        return set()
+    names = set()
+    for ents in load_json(ctx.plugins_json).get("plugins", {}).values():
+        ip = Path(ents[0].get("installPath", "")) if ents else None
+        f = ip / ".mcp.json" if ip else None
+        if f and f.exists():
+            try:
+                d = load_json(f)
+            except Broken:
+                continue
+            names.update(d.get("mcpServers", d))
+    return names
+
+
 def load_mcps(ctx):
     cfg = load_json(ctx.claude_json)
     res = []
+    glob_cmd = {}                     # 全局 server 名 -> command，供项目级同名判定
     for name, srv in cfg.get("mcpServers", {}).items():
         cmd = srv.get("command", "")
+        glob_cmd[name] = cmd
         pkg, root = find_npm_pkg(ctx.node_modules, cmd)
         if pkg:
             ver = json.loads((root / "package.json").read_text(encoding="utf-8")).get("version", "?")
@@ -296,10 +316,19 @@ def load_mcps(ctx):
             res.append(Asset(kind="mcp", name=name,
                              current=srv.get("type", "stdio"),
                              managed=False, notes="非全局 npm 装法或包未找到，来源未知"))
+    pnames = plugin_mcp_names(ctx)
     for proj, pv in cfg.get("projects", {}).items():
-        for name in pv.get("mcpServers", {}):
+        for name, srv in pv.get("mcpServers", {}).items():
+            tags = []            # 判定按实际来源，不再一刀切写「与官方插件重叠」
+            if name in glob_cmd:
+                tags.append("与全局条目重复" if glob_cmd[name] == srv.get("command", "")
+                            else "与全局条目同名但命令不同（本项目覆盖全局）")
+            if name in pnames:
+                tags.append("与官方插件重叠")
+            if not tags:
+                tags.append("项目级配置")
             res.append(Asset(kind="mcp", name=f"{name}@{proj}", current="(项目级)",
-                             managed=False, notes="项目级配置；与官方插件重叠，cpm 不处理"))
+                             managed=False, notes="；".join(tags) + "，cpm 不处理"))
     return res
 
 

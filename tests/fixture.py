@@ -40,7 +40,7 @@ def build_home(root: Path) -> Path:
 
     .claude/plugins/installed_plugins.json   3 个插件 aa(path型)/bb(url型)/cc(semver型)
     .claude/plugins/marketplaces/claude-plugins-official/   真 git 仓库，aa 有两个提交
-    .claude/plugins/cache/aa/               含 package.json + .mcp.json(npx) 的缓存目录
+    .claude/plugins/cache/aa/               含 package.json + .mcp.json(npx + playwright) 的缓存目录
     .claude/settings.json                   enabledPlugins: aa 启用 / cc 禁用
     .claude/skills/anysearch/               README 声明来源型（无 .git）
     .claude/skills/gitskill/                有 .git + github remote 型
@@ -76,7 +76,11 @@ def build_home(root: Path) -> Path:
     cache = cl / "plugins/cache/aa"
     cache.mkdir(parents=True)
     (cache / "package.json").write_text(json.dumps({"name": "aa-pkg", "version": "0.1.0"}))
-    (cache / ".mcp.json").write_text(json.dumps({"srv": {"command": "npx", "args": ["p@latest"]}}))
+    # srv：触发 plugin 的 npx 自更新标注；playwright：真机形态（官方 playwright 插件声明
+    # 同名 server），供项目级条目「与官方插件重叠」的判定用
+    (cache / ".mcp.json").write_text(json.dumps(
+        {"srv": {"command": "npx", "args": ["p@latest"]},
+         "playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}}))
 
     inst = {"version": 2, "plugins": {
         f"aa@{MARKET}": [{"scope": "user", "installPath": str(cache),

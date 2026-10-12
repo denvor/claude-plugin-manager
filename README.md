@@ -53,7 +53,12 @@ Windows（在 Git Bash 里执行；把仓库路径换成你机器上的位置）
   `--allow-scripts` 仅在探测到当前 npm 支持该配置项时才加——npm v12 系默认跳过 install scripts
   必须显式放行（真机教训：context-mode 的 postinstall/自愈例程被跳、better-sqlite3 原生构建靠缓存
   侥幸可用），而旧 npm（真机 11.12.1）不识别该 flag，硬带会报 Unknown cli config 警告），
-  cpm 自身永不使用特权。项目级 MCP 与插件重叠配置不处理，仅标注。
+  cpm 自身永不使用特权。
+- **MCP（项目级）**：Claude Code 的 local 作用域（在 `~/.claude.json` 的项目键下）**不处理，只标注**，
+  且 notes 按实际来源判定而非一刀切：与全局条目同名同命令 → 「与全局条目重复」；同名但命令不同 →
+  「同名但命令不同（本项目覆盖全局）」；server 名命中官方插件 cache 里 `.mcp.json` 的声明 →
+  「与官方插件重叠」；都不沾 → 只写「项目级配置」。真机教训：`context-mode@D:/` 是**重复注册**，
+  与插件无关，旧文案却统一写「与官方插件重叠」。
 
 ## 卸载与回收站（uninstall / trash / restore）
 

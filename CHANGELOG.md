@@ -38,6 +38,13 @@
 - **两条 sudo 硬断言**（`tests/test_uninstall.py`）：`assertIn("sudo npm rm -g")` 与
   `assertIn("sudo npm i -g")` 在 Windows 必红——代码已正确省掉 sudo，是测试假设了 Linux 形态。
   改为锁跨平台公共命令形态，并单独断言 sudo 这一轴的有无随 `os.name` 变化。
+- **项目级 MCP 的 notes 一刀切**：`load_mcps` 给所有项目级条目统一写「项目级配置；与官方插件重叠」，
+  而代码从未做过重叠判定——真机那条 `context-mode@D:/` 其实是与**全局条目重复注册**（local 作用域），
+  跟插件毫无关系。改为按实际来源标注：同名同命令 → 「与全局条目重复」；同名不同命令 →
+  「同名但命令不同（本项目覆盖全局）」；server 名命中官方插件 cache 的 `.mcp.json` 声明 →
+  「与官方插件重叠」；都不沾 → 只写「项目级配置」。新增 `plugin_mcp_names(ctx)`（从账本
+  `installPath` 收集插件声明的 server 名，无账本返回空集不炸）。fixture 的 cache `.mcp.json`
+  补一个 `playwright` server，使「与官方插件重叠」成为真判定而非文案；测试 78→83 全绿。
 
 ### Changed
 
@@ -49,6 +56,7 @@
 - README 增补 `uninstall/trash/restore` 命令表行与「卸载与回收站（uninstall / trash / restore）」一节。（`c478810`）
 - README 补 Windows 安装（双 shim 形态）、部署目录必须在**注册表 PATH**的警告（Git Bash 会虚增
   `$HOME/bin`，在它内部验证通过而 PowerShell 里 `CommandNotFoundException`，真机踩过）、平台注意一节。
+- README「各类别」拆出 **MCP（项目级）** 条目：说明 local 作用域的来源，以及四种 notes 标注各自的判定条件。
 - 新增本变更日志。
 
 ## 2026-10-11 — 检测基准修正与可观测性
