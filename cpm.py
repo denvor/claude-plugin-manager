@@ -332,6 +332,28 @@ def load_mcps(ctx):
     return res
 
 
+_LIFECYCLE_MARKERS = {".in_use", ".orphaned_at"}
+
+
+def tree_map(root):
+    """文件树指纹 {相对路径: sha256hex}。排除官方生命周期标记
+    （.in_use/ 锁目录、.orphaned_at 孤儿标记）与 node_modules——它们不是插件内容。"""
+    root = Path(root)
+    m = {}
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(root)
+        if rel.parts[0] in _LIFECYCLE_MARKERS or "node_modules" in rel.parts:
+            continue
+        m[str(rel)] = hashlib.sha256(p.read_bytes()).hexdigest()
+    return m
+
+
+def trees_equal(a, b):
+    return tree_map(a) == tree_map(b)
+
+
 def find_marketplace_entry(ctx, mp_name, plugin_name):
     mp_dir = ctx.marketplaces / mp_name
     mj = mp_dir / ".claude-plugin" / "marketplace.json"
@@ -343,8 +365,9 @@ def find_marketplace_entry(ctx, mp_name, plugin_name):
     return None, mp_dir
 
 
-def plugin_expected(mp_dir, entry):
-    """返回 (应有版本, 来源描述)。优先级: semver 字段 > url 钉 sha > 路径 git log。"""
+def plugin_expected(mp_dir, entry, install_path=None, current=None):
+    """返回 (应有版本, 来源描述)。优先级: semver 字段 > url 钉 sha > 内容比对 > 路径 git log。
+    install_path 给出时路径型走内容比对（浅克隆下 path 提交 sha 语义已失效，见 _tree_map）。"""
     if entry.get("version"):
         return entry["version"], f"marketplace semver（{entry['name']}）"
     src = entry.get("source")
@@ -361,6 +384,16 @@ def plugin_expected(mp_dir, entry):
                 ver = None
             if ver:
                 return ver, f"clone plugin.json（{src}）"
+        # 无 semver：内容比对（官方已改浅克隆，git log 对任何 path 都返回同一浅根 → 假阳性）
+        if install_path:
+            inst = Path(install_path)
+            clone_src = Path(mp_dir) / src[2:]
+            if inst.is_dir() and clone_src.is_dir():
+                if trees_equal(inst, clone_src):
+                    return current, "path 内容与安装版一致"
+                rc, out, _ = run_cmd(["git", "-C", str(mp_dir), "log", "-1", "--format=%H"])
+                if rc == 0 and out.strip():
+                    return out.strip(), "path 内容较安装版有变化"
         rc, out, _ = run_cmd(["git", "-C", str(mp_dir), "log", "-1", "--format=%H", "--", src[2:]])
         if rc == 0 and out.strip():
             return out.strip(), f"marketplace path {src}"
@@ -474,7 +507,11 @@ def check_plugins(ctx, assets):
             a.expected = None
             a.notes += " | marketplace 无此条目"
             continue
-        a.expected, a.source = plugin_expected(mp_dir, entry)
+        a.expected, a.source = plugin_expected(mp_dir, entry,
+                                               install_path=a.plan.get("installPath"),
+                                               current=a.current)
+        if a.source and a.source.startswith("path 内容"):
+            a.notes += f" | {a.source}"      # 内容比对是浅克隆下的唯一可靠基准，结论要可见
         if a.expected is None and isinstance(entry.get("source"), str) \
                 and entry["source"].startswith("./"):
             # 真机形态：官方 update 后 clone 无 .git。对齐官方 up_to_date 判定：

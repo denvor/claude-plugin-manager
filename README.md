@@ -43,7 +43,12 @@ Windows（在 Git Bash 里执行；把仓库路径换成你机器上的位置）
 
 ## 各类别的更新通道（边界，重要）
 
-- **plugin**：检测=本地比对（marketplace git 副本 vs `installed_plugins.json` 账本）；
+- **plugin**：检测按三级基准——① entry/clone `plugin.json` 有 semver 就比版本；
+  ② entry `url` 型比钉定 sha；③ 路径型无版本→**内容比对**：官方 marketplace 克隆已是
+  浅克隆（全仓库 1 个提交），「path 最后提交」语义失效（真机实证：四个无版本插件被
+  同一浅根提交集体误报可更新）。比对 = 安装目录 vs clone 路径的文件树 sha256
+  （排除官方 `.in_use/`、`.orphaned_at` 生命周期标记与 `node_modules`，毫秒级、零下载），
+  结论写进 notes（`path 内容与安装版一致` / `较安装版有变化`）。
   执行=官方 `claude plugin update`。**不做 npm 覆盖 cache**（会破坏账本）。
 - **skill**：来源自动发现（`.git` remote → README GitHub URL → `cpm.json` 补录）。
   有 `.git` 的 `pull --ff-only`；release 安装的走 zip 下载 + SHA256SUMS 校验 +

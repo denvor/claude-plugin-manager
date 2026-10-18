@@ -177,6 +177,12 @@ class TestRestoreSkill(unittest.TestCase):
 
 
 class TestRestoreMcp(unittest.TestCase):
+    def setUp(self):
+        # 「公共形态」断言假设无 --allow-scripts；真机 npm v12 探测 True 会把 flag 插进
+        # "npm i -g " 与 "@pkg" 之间击穿子串，必须锁探测缓存（与 TestNpmCompat 同法）
+        cpm._allow_scripts_probe = False
+        self.addCleanup(setattr, cpm, "_allow_scripts_probe", None)
+
     def test_restore_mcp_roundtrip(self):
         ctx = make_ctx(self)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
