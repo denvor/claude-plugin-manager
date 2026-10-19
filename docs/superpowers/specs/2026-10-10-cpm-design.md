@@ -119,6 +119,8 @@ Asset = { kind, name, current, source, latest, update_plan, managed, notes }
 - 单资产网络失败（限流、断网、404）：该行 latest 标 `?`，继续处理其余，退出码 2。
 - `update --all`：逐资产独立事务，一个失败不影响其余，末尾汇总成功/失败清单。
 - 状态文件缺失/JSON 损坏：立即报错退出（码 3），输出期望路径，不做猜测性修复。
+  例外（2026-10-19 修订）：`installed_plugins.json` 不存在 = 全新环境零插件，按空账本处理；
+  JSON 损坏仍退出码 3。
 - 子进程（claude / git / npm）失败：透传其 stderr 摘要。
 
 ## 7. 测试策略

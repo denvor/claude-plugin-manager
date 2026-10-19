@@ -170,7 +170,12 @@ def load_assets(ctx):
 
 
 def load_plugins(ctx):
-    inst = load_json(ctx.plugins_json).get("plugins", {})
+    # 全新 Claude Code 没有插件账本（官方 CLI 也不会创建空文件）：
+    # 文件不存在 = 零个已装插件，是正常状态；只有 JSON 损坏才算环境异常。
+    if ctx.plugins_json.exists():
+        inst = load_json(ctx.plugins_json).get("plugins", {})
+    else:
+        inst = {}
     enabled = {}
     if ctx.settings.exists():
         enabled = load_json(ctx.settings).get("enabledPlugins", {})

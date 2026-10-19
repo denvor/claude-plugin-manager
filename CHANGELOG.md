@@ -3,6 +3,13 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 形式。
 尚未打 tag，版本按发布日期标记。日期为提交日期（`git log --date=short`）。
 
+## 2026-10-19 — 全新环境可用性
+
+### Fixed
+
+- **零插件环境误报状态异常**：`installed_plugins.json` 不存在时不再抛 `Broken`（退出码 3）。
+  全新 Claude Code 不会创建空账本，文件缺失即「零个已装 plugin」；JSON 损坏仍按环境异常退出。
+
 ## 2026-10-12 — 卸载三件套 + Win/Linux 全链路兼容
 
 ### Added

@@ -50,6 +50,15 @@ class TestLoadPlugins(unittest.TestCase):
         self.assertIn("待检测", text)
         self.assertNotIn("->", text)               # status 不做比对
 
+    def test_missing_ledger_is_empty_not_broken(self):
+        # 全新 Claude Code 没有账本文件，官方 CLI 也不创建空文件：这是零插件状态
+        (self.home / ".claude/plugins/installed_plugins.json").unlink()
+        self.assertEqual(cpm.load_plugins(self.ctx), [])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = cpm.main(["status"], ctx=self.ctx)
+        self.assertEqual(rc, cpm.EXIT_OK)
+
     def test_main_broken_exit_on_corrupt_ledger(self):
         # 承接任务 1 的说明：Broken→main 退出码 3 的端到端路径从本任务起可达
         (self.home / ".claude/plugins/installed_plugins.json").write_text("{oops")
