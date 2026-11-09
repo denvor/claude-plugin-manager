@@ -499,8 +499,11 @@ def render(assets, as_json, checked, cache=None):
         tgt = f"{cur} -> {a.expected or '?'}" if (checked and a.managed) else (cur or "?")
         note = f"  | {a.notes.lstrip(' |')}" if a.notes else ""
         lines.append(f"{a.kind:<6} {a.name:<24} {tgt:<30} {row_status(a, checked)}{note}")
-    if cache and cache.get("checked_at"):
-        lines.append(f"── 状态来自 {cache['checked_at']} 的 check-update（离线快照，cpm check-update 刷新）")
+    stamp = cache.get("checked_at") if cache else None
+    if stamp:
+        lines.append(f"── 状态来自 {stamp} 的 check-update（离线快照，cpm check-update 刷新）")
+    elif not checked:
+        lines.append("── 无离线快照：当前是实时检测值；运行 cpm check-update 后此处显示判定快照")
     return "\n".join(lines)
 
 

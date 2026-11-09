@@ -1,7 +1,6 @@
 import contextlib
 import io
 import json
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -106,7 +105,7 @@ class TestStatusCacheDisplay(unittest.TestCase):
         line = [l for l in out.getvalue().splitlines() if "gitskill" in l][0]
         self.assertIn("待检测", line)
 
-    def test_no_cache_is_unchanged(self):
+    def test_no_cache_shows_hint(self):
         ctx = make_ctx(self)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -114,7 +113,8 @@ class TestStatusCacheDisplay(unittest.TestCase):
         text = out.getvalue()
         self.assertIn("待检测", text)
         self.assertNotIn("->", text)
-        self.assertNotIn("check-update", text)          # 无缓存不注脚
+        self.assertIn("无离线快照", text)               # 无缓存须提示，并指引刷新途径
+        self.assertIn("cpm check-update", text)
 
     def test_corrupt_cache_treated_as_absent(self):
         self.ctx.cpm_cache.write_text("{oops", encoding="utf-8")
@@ -123,6 +123,7 @@ class TestStatusCacheDisplay(unittest.TestCase):
             rc = cpm.main(["status"], ctx=self.ctx)
         self.assertEqual(rc, cpm.EXIT_OK)               # 缓存坏不掉 status
         self.assertIn("待检测", out.getvalue())
+        self.assertIn("无离线快照", out.getvalue())     # 视同无缓存，同样给提示
 
     def test_cached_managed_drives_row_shape(self):
         # 快照时刻的可管理性决定箭头形态（orphan 现在不可管，快照里假设可管 → 仍带箭头）
@@ -137,7 +138,7 @@ class TestStatusCacheDisplay(unittest.TestCase):
         self.assertIn("->", line)
 
     def test_removed_asset_cache_entry_ignored(self):
-        shutil.rmtree(self.ctx.skills / "gitskill")
+        fixture.rm_rf(self.ctx.skills / "gitskill")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             rc = cpm.main(["status"], ctx=self.ctx)

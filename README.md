@@ -9,23 +9,19 @@ Windows / Linux 双平台可用（兼容要点见「平台注意」）。
 ## 安装
 
 cpm 是单文件脚本，安装=把它放上 PATH；shim 指向仓库里的 `cpm.py`，所以以后 `git pull` 即生效，无需重装。
-部署目录 `~/.local/bin` 需已在 PATH 中（Windows 上必须是**注册表**里的那份，见下方警告）。
+
+Windows（在仓库根目录执行；脚本生成两个 shim 并把 `~/.local/bin` 写入**注册表** PATH）：
+
+    powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 Linux / macOS（symlink）：
 
     ln -s "$HOME/work/claude/claude-plugin-manager/cpm.py" ~/.local/bin/cpm
 
-Windows（在 Git Bash 里执行；把仓库路径换成你机器上的位置）——同一目录放两个 shim，
-`cpm.cmd` 给 cmd/PowerShell（PATHEXT 命中它），无扩展名的 `cpm` 给 Git Bash：
-
-    printf '@echo off\r\npython "D:\\work\\claude\\claude-plugin-manager\\cpm.py" %%*\r\nexit /b %%ERRORLEVEL%%\r\n' > ~/.local/bin/cpm.cmd
-    printf '#!/bin/sh\nexec python "D:/work/claude/claude-plugin-manager/cpm.py" "$@"\n' > ~/.local/bin/cpm
-    chmod +x ~/.local/bin/cpm
-
 > ⚠ **部署目录要在注册表 PATH（`HKCU\Environment\Path`）里，不能只在 shell 里 `echo %PATH%` 验证。**
 > Git Bash 会把自己的 `$HOME/bin` 注入到**它那个进程**的 PATH，即使该目录不在系统 PATH 中——
 > 在它内部一切正常，切到 PowerShell 就是 `CommandNotFoundException`（真机踩过）。
-> 查持久化的那份：`reg query HKCU\Environment /v Path`。
+> `install.ps1` 写的就是这份持久 PATH；手动部署时自己确认：`reg query HKCU\Environment /v Path`。
 
 ## 命令
 
