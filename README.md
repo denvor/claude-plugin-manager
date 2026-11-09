@@ -40,7 +40,8 @@ Linux / macOS（在仓库根目录执行；建 symlink 并把 `~/.local/bin` 写
 `status` 是离线的：它显示的是**上次 `cpm check-update` 的判定快照**，缓存在
 `~/.claude/.cpm_last_check.json`（`checked_at` + 每资产的 current/expected/status/managed/notes）。
 命中缓存的行直接给出「最新 / 可更新」与应有版本，未收录的资产仍显示「待检测」，表尾注明
-快照时间。缓存缺失或损坏时 `status` 行为不变（绝不因缓存坏掉而退出码 3）。`cpm update`
+快照时间与距今时长（如「距今1天20小时」）。缓存缺失或损坏时 `status` 行为不变（绝不因缓存
+坏掉而退出码 3）。`cpm update`
 成功改动资产后会删除缓存（刚被改动的「可更新」已失效），dry-run 与全部失败的更新不动缓存。
 
 ## 各类别的更新通道（边界，重要）

@@ -18,6 +18,7 @@ import tempfile
 import urllib.request
 import zipfile
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 
 EXIT_OK, EXIT_OUTDATED, EXIT_PARTIAL, EXIT_BROKEN = 0, 1, 2, 3
@@ -506,6 +507,24 @@ def write_cache(ctx, assets):
         ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def human_age(stamp):
+    """'2026-11-09 15:25' → '1天20小时'；无法解析或时间在未来返回 ''（不阻塞 status）。"""
+    try:
+        t = datetime.strptime(stamp, "%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return ""
+    d = datetime.now() - t
+    if d.total_seconds() < 0:
+        return ""
+    days, hours = d.days, d.seconds // 3600
+    if days > 0:
+        return f"{days}天{hours}小时"
+    if hours > 0:
+        return f"{hours}小时"
+    mins = d.seconds // 60
+    return f"{mins}分钟" if mins > 0 else "刚刚"
+
+
 def render(assets, as_json, checked, cache=None):
     if as_json:
         return json.dumps([{**asdict(a), "status": row_status(a, checked)} for a in assets],
@@ -527,7 +546,9 @@ def render(assets, as_json, checked, cache=None):
         lines.append(f"{a.kind:<6} {a.name:<24} {tgt:<30} {row_status(a, checked)}{note}")
     stamp = cache.get("checked_at") if cache else None
     if stamp:
-        lines.append(f"── 状态来自 {stamp} 的 check-update（离线快照，cpm check-update 刷新）")
+        age = human_age(stamp)
+        ago = f"，距今{age}" if age else ""
+        lines.append(f"── 状态来自 {stamp} 的 check-update{ago}（离线快照，cpm check-update 刷新）")
     elif not checked:
         lines.append("── 无离线快照：当前是实时检测值；运行 cpm check-update 后此处显示判定快照")
     return "\n".join(lines)

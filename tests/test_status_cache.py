@@ -3,6 +3,7 @@ import io
 import json
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import sys
@@ -26,6 +27,32 @@ def checked_ctx(test):
     with contextlib.redirect_stdout(io.StringIO()):
         cpm.main(["check-update"], ctx=ctx)
     return ctx
+
+
+class TestHumanAge(unittest.TestCase):
+    """快照时间戳 → 距今时长（status 表尾用）。"""
+
+    def _stamp(self, **kw):
+        return (datetime.now() - timedelta(**kw)).strftime("%Y-%m-%d %H:%M")
+
+    def test_minutes(self):
+        self.assertEqual(cpm.human_age(self._stamp(minutes=5)), "5分钟")
+
+    def test_hours(self):
+        self.assertEqual(cpm.human_age(self._stamp(hours=3)), "3小时")
+
+    def test_days_and_hours(self):
+        self.assertEqual(cpm.human_age(self._stamp(days=1, hours=20)), "1天20小时")
+
+    def test_just_now(self):
+        # 分钟截断 + 秒级漂移：同一分钟内可能跨边界，两种都接受
+        self.assertIn(cpm.human_age(self._stamp()), ("刚刚", "1分钟"))
+
+    def test_unparseable_returns_empty(self):
+        self.assertEqual(cpm.human_age("not a date"), "")
+
+    def test_future_returns_empty(self):
+        self.assertEqual(cpm.human_age(self._stamp(days=-1)), "")
 
 
 class TestCheckUpdateWritesCache(unittest.TestCase):
@@ -80,6 +107,7 @@ class TestStatusCacheDisplay(unittest.TestCase):
         self.assertIn("->", text)
         d = json.loads(self.ctx.cpm_cache.read_text(encoding="utf-8"))
         self.assertIn(d["checked_at"], text)      # 表尾注明快照时间
+        self.assertIn("距今", text)                # 并注明距今多久
 
     def test_status_displays_cached_verdict_verbatim(self):
         # 手改缓存判定 → status 照显示，证明它读缓存而不是自行推断

@@ -3,6 +3,14 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 形式。
 尚未打 tag，版本按发布日期标记。日期为提交日期（`git log --date=short`）。
 
+## 2026-11-09 — status 表尾显示快照距今时长
+
+### Added
+
+- **`status` 表尾注明快照距今多久**：注脚由「状态来自 … 的 check-update」改为「…，距今1天20小时
+  （离线快照，cpm check-update 刷新）」。`human_age()` 把 `checked_at` 格式化为
+  「刚刚 / N分钟 / N小时 / N天M小时」；无法解析或时间在未来返回空串（不阻塞 status）。
+
 ## 2026-11-09 — cpm.json 代理配置
 
 ### Added
