@@ -158,6 +158,7 @@ class Ctx:
         self.settings = self.claude / "settings.json"
         self.skills = self.claude / "skills"
         self.cpm_trash = self.claude / ".cpm_trash"
+        self.cpm_cache = self.claude / ".cpm_last_check.json"
         self.claude_json = self.home / ".claude.json"
         self.node_modules = Path(node_modules) if node_modules else default_node_modules()
         self.cpm_json = Path(cpm_json or Path(__file__).resolve().parent / "cpm.json")
@@ -451,22 +452,60 @@ def row_status(a, checked):
     return "可更新" if is_outdated(a) else "最新"
 
 
-def render(assets, as_json, checked):
+def cache_key(a):
+    """缓存键：plugin 用 marketplace id（不同 marketplace 可重名），其余用资产名。"""
+    return f"{a.kind}:{(a.plan or {}).get('id') or a.name}"
+
+
+def load_cache(ctx):
+    """上次 check-update 的结果缓存；缺失/损坏一律当无缓存——缓存只是加速器，
+    绝不能让它坏掉时把 status 拖成退出码 3。"""
+    if not ctx.cpm_cache.exists():
+        return None
+    try:
+        d = json.loads(ctx.cpm_cache.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(d, dict) or not isinstance(d.get("assets"), dict):
+        return None
+    return d
+
+
+def write_cache(ctx, assets):
+    ctx.cpm_cache.write_text(json.dumps(
+        {"checked_at": time.strftime("%Y-%m-%d %H:%M"),
+         "assets": {cache_key(a): {"current": display_current(a) if a.managed else a.current,
+                                  "expected": a.expected, "status": row_status(a, True),
+                                  "managed": a.managed, "notes": a.notes} for a in assets}},
+        ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def render(assets, as_json, checked, cache=None):
     if as_json:
         return json.dumps([{**asdict(a), "status": row_status(a, checked)} for a in assets],
                           ensure_ascii=False, indent=2)
     lines = []
     for a in assets:
+        entry = cache.get("assets", {}).get(cache_key(a)) if cache else None
+        if entry:
+            cur = entry.get("current") or a.current
+            managed = entry.get("managed", a.managed)   # 整行按快照渲染，含可管理性
+            tgt = f"{cur} -> {entry.get('expected') or '?'}" if managed else (cur or "?")
+            note = f"  | {entry['notes'].lstrip(' |')}" if entry.get("notes") else ""
+            lines.append(f"{a.kind:<6} {a.name:<24} {tgt:<30} {entry.get('status') or '?'}{note}")
+            continue
         # 不管理的行没有"应有版本"可比，不显示箭头；notes 避免产生空的双竖线
         cur = display_current(a) if (checked and a.managed) else a.current
         tgt = f"{cur} -> {a.expected or '?'}" if (checked and a.managed) else (cur or "?")
         note = f"  | {a.notes.lstrip(' |')}" if a.notes else ""
         lines.append(f"{a.kind:<6} {a.name:<24} {tgt:<30} {row_status(a, checked)}{note}")
+    if cache and cache.get("checked_at"):
+        lines.append(f"── 状态来自 {cache['checked_at']} 的 check-update（离线快照，cpm check-update 刷新）")
     return "\n".join(lines)
 
 
 def cmd_status(ctx):
-    print(render(load_assets(ctx), False, checked=False))
+    print(render(load_assets(ctx), False, checked=False, cache=load_cache(ctx)))
     return EXIT_OK
 
 
@@ -641,6 +680,7 @@ def cmd_check_update(ctx, as_json=False):
     check_skills(ctx, assets)
     say("cpm: mcp 检查（npm view）…")
     check_mcps(ctx, assets)
+    write_cache(ctx, assets)                # 落盘供离线 status 复用
     upd = sum(1 for a in assets if is_outdated(a))
     say(f"cpm: 完成，用时 {time.time() - t0:.1f}s，{upd} 项可更新")
     print(render(assets, as_json, checked=True))
@@ -783,6 +823,8 @@ def cmd_update(ctx, names, all_, dry_run):
         print(f"{a.kind}  {a.name}: {'✓' if good else '✗'} {msg}")
         ok, failed = ok + (1 if good else 0), failed + (0 if good else 1)
     print(f"汇总: 成功 {ok} / 失败 {failed}" + ("（dry-run）" if dry_run else ""))
+    if not dry_run and ok > 0:
+        ctx.cpm_cache.unlink(missing_ok=True)   # 缓存里刚被改动的「可更新」已失效
     say(f"cpm: 完成，用时 {time.time() - t0:.1f}s")
     return EXIT_OK if failed == 0 else EXIT_PARTIAL
 

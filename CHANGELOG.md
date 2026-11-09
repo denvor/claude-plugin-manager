@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 形式。
 尚未打 tag，版本按发布日期标记。日期为提交日期（`git log --date=short`）。
 
+## 2026-11-09 — status 显示上次检查快照
+
+### Added
+
+- **`status` 离线显示上次 `check-update` 的判定**：比对完成后结果写入
+  `~/.claude/.cpm_last_check.json`（`checked_at` + 每资产的 current/expected/status/managed/notes），
+  `status` 读该快照——命中行直接显示「最新 / 可更新」与应有版本，未收录资产仍显示「待检测」，
+  表尾注明快照时间。缓存缺失或损坏时 `status` 行为不变（绝不因缓存坏掉而走退出码 3）。
+- `cache_key()` / `load_cache()` / `write_cache()`：plugin 以 marketplace id 为键
+  （不同 marketplace 可重名），其余资产用名称。
+
+### Fixed
+
+- `cpm update` 成功改动资产后删除缓存：否则刚更新完 `status` 仍显示「可更新」。
+  dry-run 与全部失败的更新不动缓存（状态未变，快照仍有效）。
+
 ## 2026-10-19 — 全新环境可用性
 
 ### Fixed
