@@ -12,6 +12,7 @@
   登录 shell 的 PATH，缺则把带标记的 `[ -d "$HOME/.local/bin" ] && PATH=…` 块写进 `~/.profile`
   （zsh 为 `~/.zprofile`；已写过则提示未生效，不重复写），最后跑 `cpm --help` 自检，并把该目录
   临时插进当前窗口 PATH。`~/.local/bin/cpm` 若被真实文件占用则备份为 `*.bak` 再建 symlink。
+  （`133ca3a`）
 
 ### Docs
 
