@@ -10,9 +10,9 @@
 - **`status` 离线显示上次 `check-update` 的判定**：比对完成后结果写入
   `~/.claude/.cpm_last_check.json`（`checked_at` + 每资产的 current/expected/status/managed/notes），
   `status` 读该快照——命中行直接显示「最新 / 可更新」与应有版本，未收录资产仍显示「待检测」，
-  表尾注明快照时间。缓存缺失或损坏时 `status` 行为不变（绝不因缓存坏掉而走退出码 3）。
+  表尾注明快照时间。缓存缺失或损坏时 `status` 行为不变（绝不因缓存坏掉而走退出码 3）。（`b81e813`）
 - `cache_key()` / `load_cache()` / `write_cache()`：plugin 以 marketplace id 为键
-  （不同 marketplace 可重名），其余资产用名称。
+  （不同 marketplace 可重名），其余资产用名称。（`b81e813`）
 - **`status` 无快照时给出提示**：表尾注脚改为二选一——有快照仍注「状态来自 … 的 check-update」，
   无快照（含缓存损坏，视同缺失）则提示「运行 cpm check-update 后此处显示判定快照」。
   条件写作 `elif not checked`：`check-update` 自己也是以 `checked=True` 调 `render`，
@@ -27,7 +27,7 @@
 ### Fixed
 
 - `cpm update` 成功改动资产后删除缓存：否则刚更新完 `status` 仍显示「可更新」。
-  dry-run 与全部失败的更新不动缓存（状态未变，快照仍有效）。
+  dry-run 与全部失败的更新不动缓存（状态未变，快照仍有效）。（`b81e813`）
 - **`test_status_cache` 在 Windows 报错**：`shutil.rmtree` 删 git 仓库撞上 Git for Windows
   的只读 loose object（`PermissionError WinError 5`），改用仓库自带的 `fixture.rm_rf`；
   同一文件里「无缓存不注脚」的旧断言改为断言新提示。（`2bc0510`）
@@ -50,7 +50,7 @@
 ### Fixed
 
 - **零插件环境误报状态异常**：`installed_plugins.json` 不存在时不再抛 `Broken`（退出码 3）。
-  全新 Claude Code 不会创建空账本，文件缺失即「零个已装 plugin」；JSON 损坏仍按环境异常退出。
+  全新 Claude Code 不会创建空账本，文件缺失即「零个已装 plugin」；JSON 损坏仍按环境异常退出。（`197b2d0`）
 
 ## 2026-10-18 — 浅克隆下的 plugin 假阳性
 
