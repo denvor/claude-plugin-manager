@@ -3,7 +3,7 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 形式。
 尚未打 tag，版本按发布日期标记。日期为提交日期（`git log --date=short`）。
 
-## 2026-11-09 — status 显示上次检查快照
+## 2026-11-09 — status 快照与 Windows 一键部署
 
 ### Added
 
@@ -13,11 +13,28 @@
   表尾注明快照时间。缓存缺失或损坏时 `status` 行为不变（绝不因缓存坏掉而走退出码 3）。
 - `cache_key()` / `load_cache()` / `write_cache()`：plugin 以 marketplace id 为键
   （不同 marketplace 可重名），其余资产用名称。
+- **`status` 无快照时给出提示**：表尾注脚改为二选一——有快照仍注「状态来自 … 的 check-update」，
+  无快照（含缓存损坏，视同缺失）则提示「运行 cpm check-update 后此处显示判定快照」。
+  条件写作 `elif not checked`：`check-update` 自己也是以 `checked=True` 调 `render`，
+  只判缓存会让联网跑完反而冒出一句「无离线快照」。（`2bc0510`）
+- **`install.ps1`**：Windows 一键部署。生成 `cpm.cmd`（cmd/PowerShell）与 `cpm`（Git Bash）
+  两个 shim，把 `~/.local/bin` 写入 `HKCU\Environment`（幂等，识别 `%VAR%` 旧条目），
+  临时插入当前窗口 PATH，并跑 `cpm.cmd --help` 自检。shim 用无 BOM 的 CRLF（.cmd）/ LF（sh）
+  写入；改 PATH 用 `SetEnvironmentVariable` 而非 `setx`（后者截断 1024 字符）。脚本自身带
+  UTF-8 BOM——Windows PowerShell 5.1 把无 BOM 文件按 ANSI 码页读，中文注释与输出会烂。
+  （`2bc0510`）
 
 ### Fixed
 
 - `cpm update` 成功改动资产后删除缓存：否则刚更新完 `status` 仍显示「可更新」。
   dry-run 与全部失败的更新不动缓存（状态未变，快照仍有效）。
+- **`test_status_cache` 在 Windows 报错**：`shutil.rmtree` 删 git 仓库撞上 Git for Windows
+  的只读 loose object（`PermissionError WinError 5`），改用仓库自带的 `fixture.rm_rf`；
+  同一文件里「无缓存不注脚」的旧断言改为断言新提示。（`2bc0510`）
+
+### Docs
+
+- README 安装段改用 `install.ps1`，保留「部署目录必须在注册表 PATH」的警告。（`2bc0510`）
 
 ## 2026-10-19 — 全新环境可用性
 
