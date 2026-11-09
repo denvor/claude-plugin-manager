@@ -36,12 +36,40 @@
 
 - README 安装段改用 `install.ps1`，保留「部署目录必须在注册表 PATH」的警告。（`2bc0510`）
 
+### Chore
+
+- **测试套件补齐 npm 注入**：`check_plugins` 的 npm 辅助通道与 `load_mcps` 的能力探测在
+  部分用例里未注入，会真发 `npm view` / `npm config ls -l`（registry 抽风时全套从 3s
+  拖到 130s+）。给 TestPathWithoutDotGit、TestCloneVersionFirst、TestContentBasisVisible、
+  TestRestoreSkill、TestRestoreConflicts 补 npm 桩；`_allow_scripts_probe` 各处 cleanup
+  统一恢复 False，不再留 None 让后续测试走真探测。全量 106 tests 约 2.6s，探测器
+  （拦 npm/claude/fetch）复跑零命中。（`e63f46d`）
+
 ## 2026-10-19 — 全新环境可用性
 
 ### Fixed
 
 - **零插件环境误报状态异常**：`installed_plugins.json` 不存在时不再抛 `Broken`（退出码 3）。
   全新 Claude Code 不会创建空账本，文件缺失即「零个已装 plugin」；JSON 损坏仍按环境异常退出。
+
+## 2026-10-18 — 浅克隆下的 plugin 假阳性
+
+### Fixed
+
+- **路径型 plugin 在浅克隆下被集体误报「可更新」**：官方 marketplace 克隆改为浅克隆
+  （全仓库仅 1 个提交）后，`git log -- <path>` 对任何路径都返回同一个浅根，四个无 semver
+  的插件被同一提交哈希判定为可更新（真机 `diff -r` 实证内容早已最新）。`plugin_expected`
+  在 entry 与 clone 都无 semver 时改用**文件树 sha256 内容比对**（安装目录 vs clone 路径，
+  排除 `.in_use` / `.orphaned_at` 生命周期标记与 `node_modules`，毫秒级零下载）：一致 →
+  应有版本 = 现有；不一致 → 回落比较 clone HEAD；结论写入 notes。`check_plugins` 接线传
+  `installPath` / `current`，旧签名向后兼容。（`a0b9853`）
+- **`restore` 往返测试依赖宿主 npm**：漏锁 `_allow_scripts_probe`，真机 npm v12 探测为 True
+  时击穿公共形态的子串断言。（`a0b9853`）
+
+### Docs
+
+- README「各类别」的 plugin 条目改为三级基准（semver / 钉定 sha / 内容比对），说明浅克隆
+  使「path 最后提交」语义失效及其原因。（`a0b9853`）
 
 ## 2026-10-12 — 卸载三件套 + Win/Linux 全链路兼容
 
