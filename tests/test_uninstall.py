@@ -160,6 +160,11 @@ class TestTrashList(unittest.TestCase):
 
 
 class TestRestoreSkill(unittest.TestCase):
+    def setUp(self):
+        # load_assets 构造 MCP 安装命令时会探测 npm 能力（npm config ls -l），
+        # 不注入会真发子进程；测试须全离线（见 README「开发」）
+        fixture.patch_run(self, {("npm",): lambda a, c: (0, "", "")})
+
     def test_restore_skill_roundtrip(self):
         ctx = make_ctx(self)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -181,7 +186,7 @@ class TestRestoreMcp(unittest.TestCase):
         # 「公共形态」断言假设无 --allow-scripts；真机 npm v12 探测 True 会把 flag 插进
         # "npm i -g " 与 "@pkg" 之间击穿子串，必须锁探测缓存（与 TestNpmCompat 同法）
         cpm._allow_scripts_probe = False
-        self.addCleanup(setattr, cpm, "_allow_scripts_probe", None)
+        self.addCleanup(setattr, cpm, "_allow_scripts_probe", False)
 
     def test_restore_mcp_roundtrip(self):
         ctx = make_ctx(self)
@@ -201,6 +206,10 @@ class TestRestoreMcp(unittest.TestCase):
 
 
 class TestRestoreConflicts(unittest.TestCase):
+    def setUp(self):
+        # 同 TestRestoreSkill：MCP 安装命令的 npm 能力探测须注入，免得真发子进程
+        fixture.patch_run(self, {("npm",): lambda a, c: (0, "", "")})
+
     def test_restore_skill_refuses_existing_target(self):
         ctx = make_ctx(self)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -267,7 +276,7 @@ class TestNpmCompat(unittest.TestCase):
 
     def setUp(self):
         cpm._allow_scripts_probe = None      # 强制探测，不吃别的测试留下的缓存
-        self.addCleanup(setattr, cpm, "_allow_scripts_probe", None)
+        self.addCleanup(setattr, cpm, "_allow_scripts_probe", False)
 
     def _uninstall_codegraph(self, ctx):
         calls = []

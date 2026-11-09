@@ -68,6 +68,8 @@ class TestMcps(unittest.TestCase):
         state = {"out": 'allow-scripts = ""\nignore-scripts = false'}
         fixture.patch_run(self, {("npm",): lambda a, c: (0, state["out"], "")})
         cpm._allow_scripts_probe = None
+        # 探测完恢复全局默认 False：留着 None 会让后续测试走真 npm 探测（离线测试不允许）
+        self.addCleanup(setattr, cpm, "_allow_scripts_probe", False)
         self.assertTrue(cpm.npm_has_allow_scripts())
         state["out"] = "ignore-scripts = false"      # 旧 npm：无该项
         cpm._allow_scripts_probe = None

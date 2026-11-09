@@ -33,9 +33,8 @@ class TestCheckUpdateWritesCache(unittest.TestCase):
     """check-update 完成后须把比对结果落盘，供离线 status 复用。"""
 
     def setUp(self):
-        self._probe = cpm._allow_scripts_probe
         cpm._allow_scripts_probe = False
-        self.addCleanup(setattr, cpm, "_allow_scripts_probe", self._probe)
+        self.addCleanup(setattr, cpm, "_allow_scripts_probe", False)
         self.ctx = checked_ctx(self)
 
     def test_cache_written_with_keys_status_expected(self):
@@ -68,9 +67,8 @@ class TestStatusCacheDisplay(unittest.TestCase):
     """status 离线读缓存：命中行显示上次判定，未命中仍是「待检测」。"""
 
     def setUp(self):
-        self._probe = cpm._allow_scripts_probe
         cpm._allow_scripts_probe = False
-        self.addCleanup(setattr, cpm, "_allow_scripts_probe", self._probe)
+        self.addCleanup(setattr, cpm, "_allow_scripts_probe", False)
         self.ctx = checked_ctx(self)
 
     def test_status_shows_cached_verdict_and_footer(self):
@@ -151,9 +149,8 @@ class TestUpdateInvalidatesCache(unittest.TestCase):
     """update 成功改动资产后缓存必须失效——否则 status 继续显示刚被更新的「可更新」。"""
 
     def setUp(self):
-        self._probe = cpm._allow_scripts_probe
         cpm._allow_scripts_probe = False
-        self.addCleanup(setattr, cpm, "_allow_scripts_probe", self._probe)
+        self.addCleanup(setattr, cpm, "_allow_scripts_probe", False)
         self.ctx = checked_ctx(self)
 
     def test_successful_update_removes_cache_and_status_reverts(self):

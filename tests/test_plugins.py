@@ -226,6 +226,8 @@ class TestPathWithoutDotGit(unittest.TestCase):
         self.home = fixture.build_home(Path(self._td.name))
         self.ctx = fixture.test_ctx(self.home)
         fixture.rm_rf(self.ctx.marketplaces / fixture.MARKET / ".git")
+        # check_plugins 的 npm 辅助通道会真发 `npm view`；测试须全离线（见 README「开发」）
+        fixture.patch_run(self, {("npm",): lambda a, c: (0, "", "")})
         self.addCleanup(self._td.cleanup)
 
     def test_falls_back_to_remote_path_commit(self):
@@ -265,6 +267,8 @@ class TestCloneVersionFirst(unittest.TestCase):
         pj = self.ctx.marketplaces / fixture.MARKET / "plugins/aa/.claude-plugin"
         pj.mkdir(parents=True)
         (pj / "plugin.json").write_text(json.dumps({"name": "aa", "version": "3.2.1"}))
+        # 同 TestPathWithoutDotGit：check_plugins 的 npm 辅助通道须注入
+        fixture.patch_run(self, {("npm",): lambda a, c: (0, "", "")})
         self.addCleanup(self._td.cleanup)
 
     def test_clone_plugin_version_preferred_over_api(self):

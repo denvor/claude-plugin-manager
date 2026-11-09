@@ -149,6 +149,8 @@ class TestContentBasisVisible(unittest.TestCase):
         self.addCleanup(td.cleanup)
         self.ctx = fixture.test_ctx(fixture.build_home(Path(td.name)))
         self.assets = cpm.load_plugins(self.ctx)
+        # check_plugins 的 npm 辅助通道会真发 `npm view`；测试须全离线（见 README「开发」）
+        fixture.patch_run(self, {("npm",): lambda a, c: (0, "", "")})
 
     def test_diff_annotates_change(self):
         cpm.check_plugins(self.ctx, self.assets)
