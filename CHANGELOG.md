@@ -3,6 +3,23 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 形式。
 尚未打 tag，版本按发布日期标记。日期为提交日期（`git log --date=short`）。
 
+## 2026-11-09 — cpm.json 代理配置
+
+### Added
+
+- **`cpm.json` 的 `proxy.{enabled,url}`**：cpm 读取后自行决定走不走代理——`fetch_url` 用
+  `ProxyHandler` 注入，`run_cmd` 把 `http_proxy`/`https_proxy` 注入子进程环境，于是 urllib
+  通道（skill 检查、skill zip 换装）与 npm/git 等外部工具都跟随配置。`enabled` 为 false 或缺
+  `url` 一律直连；未配置时 urllib 仍读环境变量 `https_proxy`。真实动机：本机 GitHub 系域名
+  直连不通/不稳（api.github.com 直连实测 0/5，走本地代理 5/5），而 `fetch_url` 此前是裸
+  `urlopen`，既不读 gitconfig 也不读 cpm 配置。（`proxy_from_config()`，`Ctx` 载入模块级
+  `_PROXY_URL`）
+
+### Docs
+
+- README「网络与代理」改用 `cpm.json` 配置说明；skill 检查/换装两行从「须带环境变量」改为
+  「须在 cpm.json 启用 proxy」。
+
 ## 2026-11-09 — Linux 一键部署（install.sh）
 
 ### Added

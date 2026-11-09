@@ -35,11 +35,17 @@ class Broken(Exception):
     """状态文件缺失/JSON 损坏（spec §6：立即退出，码 3，不做猜测性修复）。"""
 
 
+_PROXY_URL = None             # 代理地址（cpm.json 的 proxy.url）；None = 直连
+
+
 def fetch_url(url, timeout=15):
-    """GET 并返回 bytes；任何网络/HTTP 失败返回 None（spec §6：单资产失败标 ?）。"""
+    """GET 并返回 bytes；任何网络/HTTP 失败返回 None（spec §6：单资产失败标 ?）。
+    代理按 cpm.json 的 proxy.{enabled,url} 决定（模块级 _PROXY_URL，由 Ctx 载入）。"""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "cpm"})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        handlers = ([urllib.request.ProxyHandler({"http": _PROXY_URL, "https": _PROXY_URL})]
+                    if _PROXY_URL else [])
+        with urllib.request.build_opener(*handlers).open(req, timeout=timeout) as r:
             return r.read()
     except Exception:
         return None
@@ -53,9 +59,12 @@ def run_cmd(argv, cwd=None, timeout=60):
     resolved = shutil.which(str(argv[0]))
     if resolved:
         argv[0] = resolved
+    env = dict(os.environ)
+    if _PROXY_URL:
+        env["http_proxy"] = env["https_proxy"] = _PROXY_URL
     try:
         p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout)
+                           encoding="utf-8", errors="replace", timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return 124, "", f"子进程超时({timeout}s): {disp}"
     return p.returncode, p.stdout, p.stderr
@@ -131,6 +140,21 @@ def load_json(path):
         raise Broken(f"状态文件 JSON 损坏: {path}: {e}")
 
 
+def proxy_from_config(cpm_json):
+    """cpm.json 的 proxy.{enabled,url} → 代理地址；未启用/缺失/无 url 返回 None（直连）。
+    文件损坏也当无代理——损坏的报错留给后续 load_skills，不在网络层提前抛。"""
+    path = Path(cpm_json)
+    if not path.exists():
+        return None
+    try:
+        p = json.loads(path.read_text(encoding="utf-8")).get("proxy")
+    except json.JSONDecodeError:
+        return None
+    if isinstance(p, dict) and p.get("enabled") and p.get("url"):
+        return p["url"]
+    return None
+
+
 @dataclass
 class Asset:
     kind: str                      # plugin | skill | mcp
@@ -150,6 +174,7 @@ class Ctx:
     """所有外部路径的单一来源。真实运行用默认值；测试传伪 HOME。"""
 
     def __init__(self, home=None, node_modules=None, cpm_json=None):
+        global _PROXY_URL
         self.home = Path(home or Path.home())
         self.claude = self.home / ".claude"
         self.plugins_json = self.claude / "plugins/installed_plugins.json"
@@ -162,6 +187,7 @@ class Ctx:
         self.claude_json = self.home / ".claude.json"
         self.node_modules = Path(node_modules) if node_modules else default_node_modules()
         self.cpm_json = Path(cpm_json or Path(__file__).resolve().parent / "cpm.json")
+        _PROXY_URL = proxy_from_config(self.cpm_json)
 
 
 # ---- 三类适配器与命令实现随任务 2-9 逐步填充 ----

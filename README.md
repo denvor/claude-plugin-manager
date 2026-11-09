@@ -83,18 +83,26 @@ Linux / macOS（在仓库根目录执行；建 symlink 并把 `~/.local/bin` 写
 
 ## 网络与代理（本机环境）
 
-本机 **github.com:443 直连不可达**，git 系访问须走本地代理（全局 gitconfig 已配
-`http.https://github.com.proxy = http://127.0.0.1:20171`）；`api.github.com` 与 npm registry 直连可达。
+本机 **GitHub 系域名（github.com / api.github.com / codeload.github.com）直连不通或不稳**，git 系访问须走本地代理（全局 gitconfig 已配
+`http.https://github.com.proxy = http://127.0.0.1:20171`）；npm registry 直连可达（走代理也通）。
+cpm 在 `cpm.json` 里读代理配置，据此决定走不走（urllib 通道与子进程环境变量都生效）：
+
+    {
+      "skills": {},
+      "proxy": { "enabled": true, "url": "http://127.0.0.1:20171" }
+    }
+
+`enabled` 为 false 或缺 `url` 一律直连；未配置时 urllib 仍会读环境变量 `https_proxy`。
 
 各通道对代理的依赖：
 
-| cpm 动作 | 走哪里 | 代理挂了会怎样 |
+| cpm 动作 | 走哪里 | 不走代理会怎样 |
 |---|---|---|
-| check-update：skill 最新版 | api.github.com（urllib 直连） | 不受影响 |
-| check-update：mcp | npm registry 直连 | 不受影响 |
+| check-update：skill 最新版 | api.github.com（urllib） | **失败**——直连不稳，须在 cpm.json 启用 proxy |
+| check-update：mcp | npm registry | 不受影响（直连可达，走代理也通） |
 | check-update：marketplace 刷新 | 官方 CLI → git → github.com | 刷新超时→降级告警，比对照常（结果可能偏旧） |
 | update：plugin | 官方 CLI → git | **失败**，需代理存活 |
-| update：skill zip 换装 | codeload.github.com（urllib） | **失败**——urllib 不读 gitconfig，须显式带环境变量：`https_proxy=http://127.0.0.1:20171 cpm update --all` |
+| update：skill zip 换装 | codeload.github.com（urllib） | **失败**——直连不稳，须在 cpm.json 启用 proxy |
 | update：mcp | 仅打印安装命令 | 执行时 npm 直连可达 |
 
 ## 平台注意（Windows）
