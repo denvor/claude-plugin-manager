@@ -10,6 +10,7 @@
 - **`status` 表尾注明快照距今多久**：注脚由「状态来自 … 的 check-update」改为「…，距今1天20小时
   （离线快照，cpm check-update 刷新）」。`human_age()` 把 `checked_at` 格式化为
   「刚刚 / N分钟 / N小时 / N天M小时」；无法解析或时间在未来返回空串（不阻塞 status）。
+  （`ac147d7`）
 
 ## 2026-11-09 — cpm.json 代理配置
 
@@ -22,6 +23,7 @@
   直连不通/不稳（api.github.com 直连实测 0/5，走本地代理 5/5），而 `fetch_url` 此前是裸
   `urlopen`，既不读 gitconfig 也不读 cpm 配置。（`proxy_from_config()`，`Ctx` 载入模块级
   `_PROXY_URL`）
+  （`7460a0b`）
 
 ### Docs
 
