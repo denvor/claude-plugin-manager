@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 形式。
 尚未打 tag，版本按发布日期标记。日期为提交日期（`git log --date=short`）。
 
+## 2026-11-09 — Linux 一键部署（install.sh）
+
+### Added
+
+- **`install.sh`**：Linux/macOS 一键部署，与 `install.ps1` 对应。在 `~/.local/bin` 建 symlink
+  指向仓库 `cpm.py`（`git pull` 即生效），并确保该目录在持久 PATH 里：先跑 `$SHELL -l -c` 探测
+  登录 shell 的 PATH，缺则把带标记的 `[ -d "$HOME/.local/bin" ] && PATH=…` 块写进 `~/.profile`
+  （zsh 为 `~/.zprofile`；已写过则提示未生效，不重复写），最后跑 `cpm --help` 自检，并把该目录
+  临时插进当前窗口 PATH。`~/.local/bin/cpm` 若被真实文件占用则备份为 `*.bak` 再建 symlink。
+
+### Docs
+
+- README 安装段的 Linux/macOS 一部分由手写 symlink 命令改为 `./install.sh`。
+
 ## 2026-11-09 — status 快照与 Windows 一键部署
 
 ### Added

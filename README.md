@@ -8,15 +8,15 @@ Windows / Linux 双平台可用（兼容要点见「平台注意」）。
 
 ## 安装
 
-cpm 是单文件脚本，安装=把它放上 PATH；shim 指向仓库里的 `cpm.py`，所以以后 `git pull` 即生效，无需重装。
+cpm 是单文件脚本，安装=把它放上 PATH；shim/symlink 指向仓库里的 `cpm.py`，所以以后 `git pull` 即生效，无需重装。
 
 Windows（在仓库根目录执行；脚本生成两个 shim 并把 `~/.local/bin` 写入**注册表** PATH）：
 
     powershell -ExecutionPolicy Bypass -File .\install.ps1
 
-Linux / macOS（symlink）：
+Linux / macOS（在仓库根目录执行；建 symlink 并把 `~/.local/bin` 写进 shell 配置）：
 
-    ln -s "$HOME/work/claude/claude-plugin-manager/cpm.py" ~/.local/bin/cpm
+    ./install.sh
 
 > ⚠ **部署目录要在注册表 PATH（`HKCU\Environment\Path`）里，不能只在 shell 里 `echo %PATH%` 验证。**
 > Git Bash 会把自己的 `$HOME/bin` 注入到**它那个进程**的 PATH，即使该目录不在系统 PATH 中——
